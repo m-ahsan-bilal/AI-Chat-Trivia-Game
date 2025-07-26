@@ -7,7 +7,6 @@ import '../models/user.dart';
 import '../models/lobby.dart';
 
 class ApiService {
-  // For Android Emulator use 10.0.2.2, for physical device use your computer's IP
   static const String API_BASE = 'https://aichatapi-production.up.railway.app';
 
   Future<User?> registerUser(String username) async {
@@ -66,8 +65,9 @@ class ApiService {
       final response = await http.get(Uri.parse('$API_BASE/lobbies'));
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        return data.map((json) => Lobby.fromJson(json)).toList();
+        final Map<String, dynamic> responseData = jsonDecode(response.body);
+        final List<dynamic> lobbiesData = responseData['lobbies'] ?? [];
+        return lobbiesData.map((json) => Lobby.fromJson(json)).toList();
       } else {
         debugPrint('Failed to get lobbies: ${response.body}');
         return [];
@@ -78,7 +78,7 @@ class ApiService {
     }
   }
 
-  Future<bool> joinLobby(String inviteCode, String userId) async {
+  Future<bool> joinLobbyByInvite(String inviteCode, String userId) async {
     try {
       final response = await http.post(
         Uri.parse('$API_BASE/lobbies/join-invite'),
@@ -91,9 +91,32 @@ class ApiService {
 
       return response.statusCode == 200;
     } catch (e) {
-      debugPrint('Join lobby error: $e');
+      debugPrint('Join lobby by invite error: $e');
       return false;
     }
+  }
+
+  Future<bool> joinPublicLobby(String lobbyId, String userId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$API_BASE/lobbies/join-public'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'lobby_id': lobbyId,
+          'user_id': userId,
+        }),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Join public lobby error: $e');
+      return false;
+    }
+  }
+
+  // Deprecated - use joinLobbyByInvite instead
+  Future<bool> joinLobby(String inviteCode, String userId) async {
+    return await joinLobbyByInvite(inviteCode, userId);
   }
 
   Future<Map<String, dynamic>?> getLobbyInfo(String lobbyId) async {
@@ -155,13 +178,13 @@ class ApiService {
     }
   }
 
-  Future<List<String>> getAvailableBots() async {
+  Future<List<Map<String, dynamic>>> getAvailableBots() async {
     try {
       final response = await http.get(Uri.parse('$API_BASE/bots'));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final bots = data['available_bots'] as List<dynamic>;
-        return bots.map((bot) => bot['name'] as String).toList();
+        return bots.cast<Map<String, dynamic>>();
       } else {
         debugPrint('Failed to get available bots: ${response.body}');
         return [];
@@ -169,6 +192,48 @@ class ApiService {
     } catch (e) {
       debugPrint('Get available bots error: $e');
       return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getServerStats() async {
+    try {
+      final response = await http.get(Uri.parse('$API_BASE/stats'));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        debugPrint('Failed to get server stats: ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('Get server stats error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> checkHealth() async {
+    try {
+      final response = await http.get(Uri.parse('$API_BASE/health'));
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Health check error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> leaveLobby(String lobbyId, String userId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$API_BASE/lobbies/leave'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'lobby_id': lobbyId,
+          'user_id': userId,
+        }),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Leave lobby error: $e');
+      return false;
     }
   }
 }

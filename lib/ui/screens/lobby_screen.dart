@@ -1,12 +1,14 @@
 // lib/screens/lobby_screen.dart
+// ignore_for_file: deprecated_member_use
+
 import 'package:ai_chat_trivia/core/models/message.dart';
 import 'package:ai_chat_trivia/core/providers/chat_provider.dart';
 import 'package:ai_chat_trivia/core/providers/user_provider.dart';
+import 'package:ai_chat_trivia/ui/widgets/bot_selection.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:ai_chat_trivia/core/providers/lobby_provider.dart';
 import 'package:ai_chat_trivia/core/models/trivia.dart';
-import 'package:ai_chat_trivia/core/models/lobby.dart';
 
 class LobbyScreen extends StatefulWidget {
   final String lobbyId;
@@ -26,6 +28,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late ChatProvider _chatProvider;
+  bool _isConnecting = true;
 
   @override
   void initState() {
@@ -38,14 +41,25 @@ class _LobbyScreenState extends State<LobbyScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
       final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
-      await lobbyProvider.fetchLobbyInfo(widget.lobbyId);
-      await Future.delayed(
-          const Duration(milliseconds: 500)); // Delay to avoid race condition
-      if (userProvider.currentUser != null) {
-        _chatProvider.connectToLobby(
-          widget.lobbyId,
-          userProvider.currentUser!.userId,
-        );
+
+      try {
+        await lobbyProvider.fetchLobbyInfo(widget.lobbyId);
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (userProvider.currentUser != null) {
+          _chatProvider.connectToLobby(
+            widget.lobbyId,
+            userProvider.currentUser!.userId,
+          );
+        }
+      } catch (e) {
+        debugPrint('Error initializing lobby: $e');
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isConnecting = false;
+          });
+        }
       }
     });
   }
@@ -74,13 +88,21 @@ class _LobbyScreenState extends State<LobbyScreen> {
                 return Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  margin: const EdgeInsets.only(right: 16),
+                  margin: const EdgeInsets.only(right: 8),
                   decoration: BoxDecoration(
-                    color: chatProvider.isConnected ? Colors.green : Colors.red,
+                    color: _isConnecting
+                        ? Colors.orange
+                        : (chatProvider.isConnected
+                            ? Colors.green
+                            : Colors.red),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    chatProvider.isConnected ? 'Connected' : 'Disconnected',
+                    _isConnecting
+                        ? 'Connecting...'
+                        : (chatProvider.isConnected
+                            ? 'Connected'
+                            : 'Disconnected'),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
@@ -89,6 +111,38 @@ class _LobbyScreenState extends State<LobbyScreen> {
                   ),
                 );
               },
+            ),
+            PopupMenuButton(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (value) async {
+                if (value == 'leave') {
+                  _showLeaveLobbyDialog();
+                } else if (value == 'info') {
+                  _showLobbyInfoDialog();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'info',
+                  child: Row(
+                    children: [
+                      Icon(Icons.info, color: Colors.blue),
+                      SizedBox(width: 8),
+                      Text('Lobby Info'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'leave',
+                  child: Row(
+                    children: [
+                      Icon(Icons.exit_to_app, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Leave Lobby'),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -110,14 +164,37 @@ class _LobbyScreenState extends State<LobbyScreen> {
             Expanded(
               child: Consumer<ChatProvider>(
                 builder: (context, chatProvider, _) {
+                  if (_isConnecting) {
+                    return const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16),
+                          Text('Connecting to lobby...'),
+                        ],
+                      ),
+                    );
+                  }
+
                   if (chatProvider.messages.isEmpty) {
                     return const Center(
-                      child: Text(
-                        'No messages yet. Start the conversation!',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey,
-                        ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.chat_bubble_outline,
+                              size: 60, color: Colors.grey),
+                          SizedBox(height: 16),
+                          Text(
+                            'No messages yet. Start the conversation!',
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Say hi to get the AI bots talking! 🤖',
+                            style: TextStyle(fontSize: 14, color: Colors.grey),
+                          ),
+                        ],
                       ),
                     );
                   }
@@ -155,113 +232,188 @@ class _LobbyScreenState extends State<LobbyScreen> {
   Widget _buildLobbyInfoSection() {
     return Consumer<LobbyProvider>(
       builder: (context, lobbyProvider, _) {
-        final fallbackLobby = Lobby(
-          lobbyId: '',
-          name: '',
-          currentPlayers: 0,
-          maxHumans: 0,
-          isPrivate: false,
-          inviteCode: '-',
-          users: const [],
-          bots: const [],
-          messageCount: 0,
-          triviaActive: false,
-        );
-        final lobby = lobbyProvider.lobbies.firstWhere(
-          (l) => l.lobbyId == widget.lobbyId,
-          orElse: () => fallbackLobby,
-        );
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
               color: Colors.grey.shade100,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
-                  const Icon(Icons.people, size: 18),
-                  const SizedBox(width: 4),
-                  Text('Users: ${lobbyProvider.users.join(", ")}'),
-                  const SizedBox(width: 12),
-                  const Icon(Icons.smart_toy, size: 18),
-                  const SizedBox(width: 4),
-                  Text('Bots: ${lobbyProvider.bots.join(", ")}'),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle, color: Colors.blue),
-                    tooltip: 'Add Bot',
-                    onPressed: () async {
-                      final availableBots =
-                          await lobbyProvider.apiService.getAvailableBots();
-                      if (availableBots.isNotEmpty) {
-                        final selectedBot = await showDialog<String>(
-                          context: context,
-                          builder: (context) {
-                            return SimpleDialog(
-                              title: const Text('Select Bot to Add'),
-                              children: availableBots.map((bot) {
-                                return SimpleDialogOption(
-                                  child: Text(bot),
-                                  onPressed: () => Navigator.pop(context, bot),
-                                );
-                              }).toList(),
-                            );
-                          },
-                        );
-                        if (selectedBot != null) {
-                          await lobbyProvider.addBot(
-                              widget.lobbyId, selectedBot);
-                        }
-                      }
-                    },
-                  ),
-                  if (lobbyProvider.bots.isNotEmpty)
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.remove_circle, color: Colors.red),
-                      tooltip: 'Remove Bot',
-                      onSelected: (bot) async {
-                        await lobbyProvider.removeBot(widget.lobbyId, bot);
-                      },
-                      itemBuilder: (context) => lobbyProvider.bots
-                          .map((bot) => PopupMenuItem(
-                                value: bot,
-                                child: Text('Remove $bot'),
-                              ))
-                          .toList(),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        const Icon(Icons.people, size: 18, color: Colors.blue),
+                        const SizedBox(width: 4),
+                        Text('${lobbyProvider.activeUsers.length} active'),
+                        const SizedBox(width: 16),
+                        const Icon(Icons.smart_toy,
+                            size: 18, color: Colors.deepPurple),
+                        const SizedBox(width: 4),
+                        Text('${lobbyProvider.bots.length} bots'),
+                        if (lobbyProvider.triviaActive) ...[
+                          const SizedBox(width: 16),
+                          const Icon(Icons.quiz,
+                              color: Colors.orange, size: 18),
+                          const SizedBox(width: 4),
+                          const Text('Trivia Active',
+                              style: TextStyle(
+                                  color: Colors.orange,
+                                  fontWeight: FontWeight.bold)),
+                        ],
+                      ],
                     ),
-                  const SizedBox(width: 12),
-                  if (lobbyProvider.triviaActive)
-                    const Icon(Icons.quiz, color: Colors.deepPurple, size: 18),
-                  if (lobbyProvider.triviaActive) const SizedBox(width: 4),
-                  if (lobbyProvider.triviaActive)
-                    const Text('Trivia Active',
-                        style: TextStyle(color: Colors.deepPurple)),
-                ],
-              ),
-            ),
-            Container(
-              color: Colors.grey.shade50,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline,
-                      size: 16, color: Colors.blueGrey),
-                  const SizedBox(width: 4),
-                  Text('Invite Code: ${lobby.inviteCode}'),
-                  const SizedBox(width: 12),
-                  Icon(
-                    lobby.isPrivate ? Icons.lock : Icons.public,
-                    size: 16,
-                    color: Colors.blueGrey,
                   ),
-                  const SizedBox(width: 4),
-                  Text(lobby.isPrivate ? 'Private' : 'Public'),
+                  _buildBotManagementButtons(lobbyProvider),
                 ],
               ),
             ),
+            if (lobbyProvider.bots.isNotEmpty)
+              Container(
+                color: Colors.deepPurple.shade50,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.smart_toy,
+                        size: 16, color: Colors.deepPurple),
+                    const SizedBox(width: 8),
+                    const Text('Active Bots: ',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        children: lobbyProvider.bots
+                            .map((bot) => Chip(
+                                  label: Text(bot,
+                                      style: const TextStyle(fontSize: 12)),
+                                  backgroundColor: Colors.deepPurple.shade100,
+                                  deleteIcon: const Icon(Icons.close, size: 16),
+                                  onDeleted: () =>
+                                      _removeBot(bot, lobbyProvider),
+                                ))
+                            .toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         );
       },
     );
+  }
+
+  Widget _buildBotManagementButtons(LobbyProvider lobbyProvider) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.add_circle, color: Colors.green),
+          tooltip: 'Add AI Bot',
+          onPressed: () => _showAddBotDialog(lobbyProvider),
+        ),
+        if (lobbyProvider.bots.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.blue),
+            tooltip: 'Refresh Lobby Info',
+            onPressed: () => lobbyProvider.fetchLobbyInfo(widget.lobbyId),
+          ),
+      ],
+    );
+  }
+
+  void _showAddBotDialog(LobbyProvider lobbyProvider) async {
+    try {
+      final availableBots = await lobbyProvider.getAvailableBots();
+
+      if (!mounted) return;
+
+      if (availableBots.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No bots available at the moment')),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => BotSelectionDialog(
+          availableBots: availableBots,
+          onBotSelected: (botName) => _addBot(botName, lobbyProvider),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading bots: $e')),
+      );
+    }
+  }
+
+  void _addBot(String botName, LobbyProvider lobbyProvider) async {
+    final success = await lobbyProvider.addBot(widget.lobbyId, botName);
+
+    if (!mounted) return;
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$botName added to the lobby! 🤖'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to add $botName. Lobby might be full.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _removeBot(String botName, LobbyProvider lobbyProvider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Remove $botName?'),
+        content:
+            Text('Are you sure you want to remove $botName from the lobby?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final success = await lobbyProvider.removeBot(widget.lobbyId, botName);
+
+      if (!mounted) return;
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$botName removed from the lobby'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to remove $botName'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildTriviaQuestion(TriviaQuestion trivia) {
@@ -269,37 +421,131 @@ class _LobbyScreenState extends State<LobbyScreen> {
     return Consumer<UserProvider>(
       builder: (context, userProvider, _) {
         return Card(
-          color: Colors.yellow.shade50,
+          color: Colors.orange.shade50,
           margin: const EdgeInsets.all(12),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Trivia Time!',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 8),
-                Text(trivia.question, style: const TextStyle(fontSize: 15)),
-                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.quiz, color: Colors.orange, size: 24),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Trivia Time!',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.orange,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${trivia.timeLimit}s',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  trivia.question,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 12),
                 ...List.generate(trivia.options.length, (i) {
-                  return RadioListTile<int>(
-                    value: i,
-                    groupValue: selectedOption,
-                    title: Text(trivia.options[i]),
-                    onChanged: (val) async {
-                      selectedOption = val;
-                      if (val != null) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: InkWell(
+                      onTap: () async {
+                        selectedOption = i;
                         await Provider.of<ChatProvider>(context, listen: false)
-                            .submitTriviaAnswer(widget.lobbyId,
-                                userProvider.currentUser!.userId, val);
+                            .submitTriviaAnswer(
+                          widget.lobbyId,
+                          userProvider.currentUser!.userId,
+                          i,
+                        );
                         setState(() {});
-                      }
-                    },
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: selectedOption == i
+                              ? Colors.orange.shade200
+                              : Colors.white,
+                          border: Border.all(
+                            color: selectedOption == i
+                                ? Colors.orange
+                                : Colors.grey.shade300,
+                            width: 2,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: selectedOption == i
+                                    ? Colors.orange
+                                    : Colors.grey.shade300,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${i + 1}',
+                                  style: TextStyle(
+                                    color: selectedOption == i
+                                        ? Colors.white
+                                        : Colors.black,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                trivia.options[i],
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: selectedOption == i
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                            if (selectedOption == i)
+                              const Icon(Icons.check, color: Colors.orange),
+                          ],
+                        ),
+                      ),
+                    ),
                   );
                 }),
-                const SizedBox(height: 4),
-                const Text('Submit your answer before time runs out!'),
+                const SizedBox(height: 8),
+                const Text(
+                  '⏰ Submit your answer before time runs out!',
+                  style: TextStyle(
+                    fontStyle: FontStyle.italic,
+                    color: Colors.orange,
+                  ),
+                ),
               ],
             ),
           ),
@@ -313,21 +559,55 @@ class _LobbyScreenState extends State<LobbyScreen> {
       color: Colors.green.shade50,
       margin: const EdgeInsets.all(12),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Trivia Result',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Row(
+              children: [
+                Icon(Icons.emoji_events, color: Colors.green, size: 24),
+                SizedBox(width: 8),
+                Text(
+                  'Trivia Result',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Correct answer: Option ${result.correctAnswer + 1}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
             const SizedBox(height: 8),
-            Text('Correct answer: Option ${result.correctAnswer + 1}'),
-            const SizedBox(height: 4),
-            if (result.winners.isNotEmpty)
-              Text('Winners: ${result.winners.join(", ")}',
-                  style: const TextStyle(color: Colors.green)),
-            if (result.winners.isEmpty)
-              const Text('No winners this round.',
-                  style: TextStyle(color: Colors.red)),
+            if (result.winners.isNotEmpty) ...[
+              const Text(
+                '🏆 Winners:',
+                style:
+                    TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 8,
+                children: result.winners
+                    .map((winner) => Chip(
+                          label: Text(winner),
+                          backgroundColor: Colors.green.shade100,
+                          avatar: const Icon(Icons.star,
+                              size: 16, color: Colors.green),
+                        ))
+                    .toList(),
+              ),
+            ] else ...[
+              const Text(
+                '😅 No winners this round - better luck next time!',
+                style: TextStyle(
+                    color: Colors.orange, fontWeight: FontWeight.w500),
+              ),
+            ],
           ],
         ),
       ),
@@ -344,21 +624,22 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
     if (isSystem) {
       return Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
+        margin: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Text(
               message.message,
               style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 12,
+                color: Colors.grey.shade700,
+                fontSize: 13,
                 fontStyle: FontStyle.italic,
               ),
+              textAlign: TextAlign.center,
             ),
           ),
         ),
@@ -366,31 +647,31 @@ class _LobbyScreenState extends State<LobbyScreen> {
     }
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      margin: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment:
             isCurrentUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!isCurrentUser) ...[
             CircleAvatar(
-              radius: 16,
+              radius: 18,
               backgroundColor: isBot ? Colors.deepPurple : Colors.blue.shade600,
               child: isBot
-                  ? const Icon(Icons.smart_toy, color: Colors.white, size: 18)
+                  ? const Icon(Icons.smart_toy, color: Colors.white, size: 20)
                   : Text(
                       message.username[0].toUpperCase(),
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
           ],
           Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: isBot
                     ? Colors.deepPurple.shade100
@@ -398,17 +679,25 @@ class _LobbyScreenState extends State<LobbyScreen> {
                         ? Colors.blue.shade600
                         : Colors.grey.shade200),
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isCurrentUser ? 16 : 4),
-                  bottomRight: Radius.circular(isCurrentUser ? 4 : 16),
+                  topLeft: const Radius.circular(20),
+                  topRight: const Radius.circular(20),
+                  bottomLeft: Radius.circular(isCurrentUser ? 20 : 6),
+                  bottomRight: Radius.circular(isCurrentUser ? 6 : 20),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (!isCurrentUser)
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           message.username,
@@ -420,21 +709,25 @@ class _LobbyScreenState extends State<LobbyScreen> {
                                 : Colors.grey.shade600,
                           ),
                         ),
-                        if (isBot)
-                          const Padding(
-                            padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.smart_toy,
-                                size: 14, color: Colors.deepPurple),
+                        if (isBot) ...[
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.smart_toy,
+                            size: 12,
+                            color: Colors.deepPurple,
                           ),
+                        ],
                       ],
                     ),
+                  if (!isCurrentUser) const SizedBox(height: 4),
                   Text(
                     message.message,
                     style: TextStyle(
                       color: isBot
                           ? Colors.deepPurple.shade900
                           : (isCurrentUser ? Colors.white : Colors.black87),
-                      fontSize: 14,
+                      fontSize: 15,
+                      height: 1.3,
                     ),
                   ),
                 ],
@@ -442,15 +735,15 @@ class _LobbyScreenState extends State<LobbyScreen> {
             ),
           ),
           if (isCurrentUser) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             CircleAvatar(
-              radius: 16,
+              radius: 18,
               backgroundColor: Colors.blue.shade600,
               child: Text(
                 message.username[0].toUpperCase(),
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -469,8 +762,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
         boxShadow: [
           BoxShadow(
             color: Colors.grey.shade300,
-            offset: const Offset(0, -1),
-            blurRadius: 4,
+            offset: const Offset(0, -2),
+            blurRadius: 6,
           ),
         ],
       ),
@@ -482,10 +775,13 @@ class _LobbyScreenState extends State<LobbyScreen> {
               decoration: InputDecoration(
                 hintText: 'Type a message...',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(25),
+                  borderSide: BorderSide.none,
                 ),
+                filled: true,
+                fillColor: Colors.grey.shade100,
                 contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
+                  horizontal: 20,
                   vertical: 12,
                 ),
               ),
@@ -494,13 +790,18 @@ class _LobbyScreenState extends State<LobbyScreen> {
               onSubmitted: (_) => _sendMessage(),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Consumer<ChatProvider>(
             builder: (context, chatProvider, _) {
               return FloatingActionButton(
                 mini: true,
-                onPressed: chatProvider.isConnected ? _sendMessage : null,
-                child: const Icon(Icons.send),
+                onPressed: chatProvider.isConnected && !_isConnecting
+                    ? _sendMessage
+                    : null,
+                backgroundColor: chatProvider.isConnected && !_isConnecting
+                    ? Colors.blue.shade600
+                    : Colors.grey,
+                child: const Icon(Icons.send, color: Colors.white),
               );
             },
           ),
@@ -515,5 +816,58 @@ class _LobbyScreenState extends State<LobbyScreen> {
       _chatProvider.sendMessage(message);
       _messageController.clear();
     }
+  }
+
+  void _showLeaveLobbyDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Leave Lobby'),
+        content: const Text('Are you sure you want to leave this lobby?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Go back to home screen
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLobbyInfoDialog() {
+    final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(widget.lobbyName),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Lobby ID: ${widget.lobbyId}'),
+            Text('Active Users: ${lobbyProvider.activeUsers.join(", ")}'),
+            Text('Total Users: ${lobbyProvider.users.join(", ")}'),
+            Text('Active Bots: ${lobbyProvider.bots.join(", ")}'),
+            Text('Messages: ${lobbyProvider.messageCount}'),
+            Text('Trivia Active: ${lobbyProvider.triviaActive ? "Yes" : "No"}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -36,7 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Trivia Chat Game'),
+        title: const Text('AI Trivia Chat Game'),
         actions: [
           Consumer<UserProvider>(
             builder: (context, userProvider, _) {
@@ -44,9 +44,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 onSelected: (value) {
                   if (value == 'logout') {
                     _showLogoutConfirmation();
+                  } else if (value == 'stats') {
+                    _showServerStats();
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'stats',
+                    child: Row(
+                      children: [
+                        Icon(Icons.analytics, color: Colors.blue),
+                        SizedBox(width: 8),
+                        Text('Server Stats'),
+                      ],
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: 'logout',
                     child: Row(
@@ -111,6 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     labelText: 'Enter invite code',
                     prefixIcon: Icon(Icons.vpn_key),
                     border: OutlineInputBorder(),
+                    helperText: 'Join private lobbies with invite code',
                   ),
                 ),
               ),
@@ -179,7 +192,8 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
         leading: CircleAvatar(
-          backgroundColor: Colors.blue[600],
+          backgroundColor:
+              lobby.isPrivate ? Colors.red.shade600 : Colors.blue.shade600,
           child: Icon(
             lobby.isPrivate ? Icons.lock : Icons.public,
             color: Colors.white,
@@ -196,26 +210,81 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            if (lobby.triviaActive)
-              const Icon(Icons.quiz, color: Colors.deepPurple, size: 20),
+            if (lobby.hasTriviaActive)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.quiz, color: Colors.deepPurple, size: 16),
+                    SizedBox(width: 4),
+                    Text(
+                      'TRIVIA',
+                      style: TextStyle(
+                        color: Colors.deepPurple,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Row(
               children: [
                 const Icon(Icons.people, size: 16, color: Colors.blueGrey),
                 const SizedBox(width: 4),
-                Text('Players: ${lobby.currentPlayers}/${lobby.maxHumans}'),
-                const SizedBox(width: 12),
+                Text('${lobby.currentPlayers}/${lobby.maxHumans}'),
+                const SizedBox(width: 16),
                 const Icon(Icons.smart_toy, size: 16, color: Colors.deepPurple),
                 const SizedBox(width: 4),
-                Text('Bots: ${lobby.bots.length}'),
+                Text('${lobby.currentBots}/${lobby.maxBots} bots'),
+                const SizedBox(width: 16),
+                const Icon(Icons.chat, size: 16, color: Colors.green),
+                const SizedBox(width: 4),
+                Text('${lobby.messageCount} msgs'),
               ],
             ),
-            Text('Code: ${lobby.inviteCode}'),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.vpn_key, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  'Code: ${lobby.inviteCode}',
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  ),
+                ),
+                if (lobby.isPrivate) ...[
+                  const SizedBox(width: 12),
+                  const Icon(Icons.lock, size: 14, color: Colors.red),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Private',
+                    style: TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                ] else ...[
+                  const SizedBox(width: 12),
+                  const Icon(Icons.public, size: 14, color: Colors.green),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Public',
+                    style: TextStyle(color: Colors.green, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
           ],
         ),
         trailing: const Icon(Icons.arrow_forward_ios),
@@ -236,54 +305,142 @@ class _HomeScreenState extends State<HomeScreen> {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
 
-    final success = await lobbyProvider.joinLobby(
+    final success = await lobbyProvider.joinLobbyByInvite(
       inviteCode,
       userProvider.currentUser!.userId,
     );
 
     if (success) {
-      // Find the lobby by invite code
-      final lobby = lobbyProvider.lobbies.firstWhere(
-        (l) => l.inviteCode == inviteCode,
-        orElse: () => lobbyProvider.lobbies.first,
-      );
+      // Refresh lobbies to get updated info
+      await lobbyProvider.loadLobbies();
 
-      _navigateToLobby(lobby.lobbyId, lobby.name);
-      _inviteCodeController.clear();
+      // Find the lobby by invite code
+      final lobby = lobbyProvider.lobbies.cast<Lobby?>().firstWhere(
+            (l) => l?.inviteCode == inviteCode,
+            orElse: () => null,
+          );
+
+      if (lobby != null) {
+        _navigateToLobby(lobby.lobbyId, lobby.name);
+        _inviteCodeController.clear();
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Joined lobby but could not navigate')),
+        );
+      }
     } else {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to join lobby')),
+        const SnackBar(
+            content: Text('Failed to join lobby. Check the invite code.')),
       );
     }
   }
 
-  void _joinLobby(Lobby lobby) {
-    _navigateToLobby(lobby.lobbyId, lobby.name);
+  void _joinLobby(Lobby lobby) async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
+
+    // For public lobbies, use the new public join endpoint
+    bool success;
+    if (lobby.isPrivate) {
+      success = await lobbyProvider.joinLobbyByInvite(
+        lobby.inviteCode,
+        userProvider.currentUser!.userId,
+      );
+    } else {
+      success = await lobbyProvider.joinPublicLobby(
+        lobby.lobbyId,
+        userProvider.currentUser!.userId,
+      );
+    }
+
+    if (success) {
+      _navigateToLobby(lobby.lobbyId, lobby.name);
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            lobby.currentPlayers >= lobby.maxHumans
+                ? 'Lobby is full'
+                : 'Failed to join lobby',
+          ),
+        ),
+      );
+    }
   }
 
   void _navigateToCreateLobby() async {
     final userId =
         Provider.of<UserProvider>(context, listen: false).currentUser!.userId;
-    final result = await Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CreateLobbyScreen(userId: userId),
       ),
     );
     // Refresh lobby list after returning from create lobby
-    Provider.of<LobbyProvider>(context, listen: false).loadLobbies();
+    if (mounted) {
+      Provider.of<LobbyProvider>(context, listen: false).loadLobbies();
+    }
   }
 
   void _navigateToLobby(String lobbyId, String lobbyName) async {
     // Fetch full lobby info before navigating
     final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
     await lobbyProvider.fetchLobbyInfo(lobbyId);
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => LobbyScreen(
-          lobbyId: lobbyId,
-          lobbyName: lobbyName,
+
+    if (mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => LobbyScreen(
+            lobbyId: lobbyId,
+            lobbyName: lobbyName,
+          ),
         ),
+      );
+    }
+  }
+
+  void _showServerStats() async {
+    final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
+    final stats = await lobbyProvider.apiService.getServerStats();
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Server Statistics'),
+        content: stats != null
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Total Users: ${stats['total_users']}'),
+                  Text('Total Lobbies: ${stats['total_lobbies']}'),
+                  Text('Active Lobbies: ${stats['active_lobbies']}'),
+                  Text('Total Messages: ${stats['total_messages']}'),
+                  Text('Total Bots: ${stats['total_bots']}'),
+                  const SizedBox(height: 8),
+                  const Text('AI Providers:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                      'Hugging Face: ${stats['ai_providers']['huggingface'] ? "✅" : "❌"}'),
+                  Text(
+                      'Ollama: ${stats['ai_providers']['ollama'] ? "✅" : "❌"}'),
+                  Text(
+                      'Enhanced Rules: ${stats['ai_providers']['enhanced_rules'] ? "✅" : "❌"}'),
+                ],
+              )
+            : const Text('Failed to load server stats'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

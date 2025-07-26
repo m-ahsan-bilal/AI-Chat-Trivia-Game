@@ -20,6 +20,8 @@ class LobbyProvider with ChangeNotifier {
   int get messageCount => _messageCount;
   List<String> _users = [];
   List<String> get users => _users;
+  List<String> _activeUsers = [];
+  List<String> get activeUsers => _activeUsers;
 
   ApiService get apiService => _apiService;
 
@@ -27,7 +29,13 @@ class LobbyProvider with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    _lobbies = await _apiService.getLobbies();
+    try {
+      _lobbies = await _apiService.getLobbies();
+    } catch (e) {
+      debugPrint('Error loading lobbies: $e');
+      _lobbies = [];
+    }
+
     _isLoading = false;
     notifyListeners();
   }
@@ -53,8 +61,35 @@ class LobbyProvider with ChangeNotifier {
     return result;
   }
 
+  // Updated method for invite-based joining
+  Future<bool> joinLobbyByInvite(String inviteCode, String userId) async {
+    final success = await _apiService.joinLobbyByInvite(inviteCode, userId);
+
+    if (success) {
+      await loadLobbies(); // Refresh lobby list
+    }
+
+    return success;
+  }
+
+  // New method for public lobby joining
+  Future<bool> joinPublicLobby(String lobbyId, String userId) async {
+    final success = await _apiService.joinPublicLobby(lobbyId, userId);
+
+    if (success) {
+      await loadLobbies(); // Refresh lobby list
+    }
+
+    return success;
+  }
+
+  // Deprecated - use joinLobbyByInvite instead
   Future<bool> joinLobby(String inviteCode, String userId) async {
-    final success = await _apiService.joinLobby(inviteCode, userId);
+    return await joinLobbyByInvite(inviteCode, userId);
+  }
+
+  Future<bool> leaveLobby(String lobbyId, String userId) async {
+    final success = await _apiService.leaveLobby(lobbyId, userId);
 
     if (success) {
       await loadLobbies(); // Refresh lobby list
@@ -69,13 +104,18 @@ class LobbyProvider with ChangeNotifier {
   }
 
   Future<void> fetchLobbyInfo(String lobbyId) async {
-    final info = await _apiService.getLobbyInfo(lobbyId);
-    if (info != null) {
-      _bots = List<String>.from(info['bots'] ?? []);
-      _triviaActive = info['trivia_active'] ?? false;
-      _messageCount = info['message_count'] ?? 0;
-      _users = List<String>.from(info['users'] ?? []);
-      notifyListeners();
+    try {
+      final info = await _apiService.getLobbyInfo(lobbyId);
+      if (info != null) {
+        _bots = List<String>.from(info['bots'] ?? []);
+        _triviaActive = info['trivia_active'] ?? false;
+        _messageCount = info['message_count'] ?? 0;
+        _users = List<String>.from(info['users'] ?? []);
+        _activeUsers = List<String>.from(info['active_users'] ?? []);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error fetching lobby info: $e');
     }
   }
 
@@ -93,5 +133,33 @@ class LobbyProvider with ChangeNotifier {
       await fetchLobbyInfo(lobbyId);
     }
     return success;
+  }
+
+  Future<List<Map<String, dynamic>>> getAvailableBots() async {
+    try {
+      return await _apiService.getAvailableBots();
+    } catch (e) {
+      debugPrint('Error getting available bots: $e');
+      return [];
+    }
+  }
+
+  Future<bool> checkServerHealth() async {
+    try {
+      return await _apiService.checkHealth();
+    } catch (e) {
+      debugPrint('Error checking server health: $e');
+      return false;
+    }
+  }
+
+  void clearCurrentLobby() {
+    _currentLobbyId = null;
+    _bots.clear();
+    _users.clear();
+    _activeUsers.clear();
+    _triviaActive = false;
+    _messageCount = 0;
+    notifyListeners();
   }
 }
