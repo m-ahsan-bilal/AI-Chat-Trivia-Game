@@ -22,7 +22,7 @@ class ChatMessage {
     this.repliedMessage,
     this.triviaData,
     this.triviaResult,
-  }) : timestamp = timestamp ?? DateTime.now();
+  }) : timestamp = DateTime.now();
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     ChatMessage? repliedMessage;
@@ -52,7 +52,7 @@ class ChatMessage {
       'username': username,
       'message': message,
       'type': type,
-      'timestamp': timestamp.toIso8601String(),
+      'timestamp': timestamp.toString(),
       'avatar': avatar,
       'reply_to': replyTo,
       'replied_message': repliedMessage?.toJson(),

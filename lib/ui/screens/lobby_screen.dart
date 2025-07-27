@@ -1,14 +1,16 @@
-// lib/screens/lobby_screen.dart
+// lib/ui/screens/lobby_screen.dart
 // ignore_for_file: deprecated_member_use
 
-import 'package:ai_chat_trivia/core/models/message.dart';
-import 'package:ai_chat_trivia/core/providers/chat_provider.dart';
-import 'package:ai_chat_trivia/core/providers/user_provider.dart';
-import 'package:ai_chat_trivia/ui/widgets/bot_selection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:ai_chat_trivia/core/providers/lobby_provider.dart';
-import 'package:ai_chat_trivia/core/models/trivia.dart';
+import 'dart:async';
+import '../../core/providers/chat_provider.dart';
+import '../../core/providers/lobby_provider.dart';
+import '../../core/providers/user_provider.dart';
+import '../../core/models/message.dart';
+import '../../core/models/trivia.dart';
+import '../../core/theme/app_theme.dart';
 
 class LobbyScreen extends StatefulWidget {
   final String lobbyId;
@@ -24,726 +26,585 @@ class LobbyScreen extends StatefulWidget {
   State<LobbyScreen> createState() => _LobbyScreenState();
 }
 
-class _LobbyScreenState extends State<LobbyScreen> {
-  final TextEditingController _messageController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  late ChatProvider _chatProvider;
-  bool _isConnecting = true;
+class _LobbyScreenState extends State<LobbyScreen>
+    with TickerProviderStateMixin {
+  final _messageController = TextEditingController();
+  final _scrollController = ScrollController();
+
+  late AnimationController _typingAnimationController;
+  late Animation<double> _typingAnimation;
+
+  Timer? _typingTimer;
+  bool _isTyping = false;
 
   @override
   void initState() {
     super.initState();
+    _setupAnimations();
+    _connectToLobby();
+  }
 
-    // Initialize chat provider
-    _chatProvider = ChatProvider();
+  void _setupAnimations() {
+    _typingAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
 
-    // Connect to lobby after the widget is built
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
+    _typingAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _typingAnimationController,
+      curve: Curves.easeInOut,
+    ));
 
-      try {
-        await lobbyProvider.fetchLobbyInfo(widget.lobbyId);
-        await Future.delayed(const Duration(milliseconds: 500));
+    _typingAnimationController.repeat(reverse: true);
+  }
 
-        if (userProvider.currentUser != null) {
-          _chatProvider.connectToLobby(
-            widget.lobbyId,
-            userProvider.currentUser!.userId,
-          );
-        }
-      } catch (e) {
-        debugPrint('Error initializing lobby: $e');
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isConnecting = false;
-          });
-        }
-      }
-    });
+  void _connectToLobby() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    await chatProvider.connectToLobby(
+      widget.lobbyId,
+      userProvider.currentUserId,
+      userProvider.currentUsername,
+    );
   }
 
   @override
   void dispose() {
-    _chatProvider.disconnect();
-    _chatProvider.dispose();
+    _typingAnimationController.dispose();
     _messageController.dispose();
     _scrollController.dispose();
+    _typingTimer?.cancel();
+
+    // Disconnect from chat
+    Provider.of<ChatProvider>(context, listen: false).disconnect();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider<ChatProvider>.value(value: _chatProvider),
-      ],
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.lobbyName),
-          actions: [
-            Consumer<ChatProvider>(
-              builder: (context, chatProvider, _) {
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: _isConnecting
-                        ? Colors.orange
-                        : (chatProvider.isConnected
-                            ? Colors.green
-                            : Colors.red),
-                    borderRadius: BorderRadius.circular(12),
+    return Scaffold(
+      appBar: _buildAppBar(),
+      body: Column(
+        children: [
+          _buildLobbyInfo(),
+          _buildTriviaSection(),
+          Expanded(child: _buildChatSection()),
+          _buildMessageInput(),
+        ],
+      ),
+      endDrawer: _buildLobbyDrawer(),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.lobbyName,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          Consumer<ChatProvider>(
+            builder: (context, chatProvider, _) {
+              return Text(
+                chatProvider.isConnected ? 'Connected' : 'Connecting...',
+                style: TextStyle(
+                  fontSize: 12,
+                  color:
+                      chatProvider.isConnected ? Colors.green : Colors.orange,
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      actions: [
+        Consumer<LobbyProvider>(
+          builder: (context, lobbyProvider, _) {
+            final lobby = lobbyProvider.currentLobby;
+            if (lobby == null) return const SizedBox.shrink();
+
+            return Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.people, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${lobby.currentPlayers}',
+                    style: const TextStyle(fontSize: 12),
                   ),
-                  child: Text(
-                    _isConnecting
-                        ? 'Connecting...'
-                        : (chatProvider.isConnected
-                            ? 'Connected'
-                            : 'Disconnected'),
+                ],
+              ),
+            );
+          },
+        ),
+        Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openEndDrawer(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLobbyInfo() {
+    return Consumer<LobbyProvider>(
+      builder: (context, lobbyProvider, _) {
+        final lobby = lobbyProvider.currentLobby;
+        if (lobby == null) return const SizedBox.shrink();
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.primaryColor.withOpacity(0.05),
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.grey.shade200,
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Icon(
+                      lobby.isPrivate ? Icons.lock : Icons.public,
+                      size: 16,
+                      color: lobby.isPrivate ? Colors.red : Colors.green,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Code: ${lobby.inviteCode}',
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (lobby.hasActiveBots) ...[
+                Row(
+                  children: lobby.bots.take(3).map((bot) {
+                    return Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Tooltip(
+                        message: bot.name,
+                        child: Text(
+                          bot.displayAvatar,
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                if (lobby.bots.length > 3)
+                  Text(
+                    ' +${lobby.bots.length - 3}',
                     style: const TextStyle(
-                      color: Colors.white,
                       fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textSecondaryColor,
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTriviaSection() {
+    return Consumer<ChatProvider>(
+      builder: (context, chatProvider, _) {
+        if (chatProvider.hasActiveTrivia) {
+          return _buildActiveTrivia(chatProvider.activeTrivia!);
+        } else if (chatProvider.triviaResult != null) {
+          return _buildTriviaResult(chatProvider.triviaResult!);
+        }
+        return const SizedBox.shrink();
+      },
+    );
+  }
+
+  Widget _buildActiveTrivia(TriviaQuestion trivia) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: AppTheme.secondaryGradient,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.secondaryColor.withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.quiz, color: Colors.white, size: 24),
+              const SizedBox(width: 12),
+              const Text(
+                'TRIVIA TIME!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Consumer<ChatProvider>(
+                builder: (context, chatProvider, _) {
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${chatProvider.triviaTimeRemaining}s',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            trivia.question,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...trivia.options.asMap().entries.map((entry) {
+            final index = entry.key;
+            final option = entry.value;
+
+            return Consumer<ChatProvider>(
+              builder: (context, chatProvider, _) {
+                final hasAnswered = chatProvider.hasAnsweredTrivia;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ElevatedButton(
+                    onPressed:
+                        hasAnswered ? null : () => _submitTriviaAnswer(index),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppTheme.secondaryColor,
+                      minimumSize: const Size(double.infinity, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      '${String.fromCharCode(65 + index)}. $option',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
                     ),
                   ),
                 );
               },
-            ),
-            PopupMenuButton(
-              icon: const Icon(Icons.more_vert),
-              onSelected: (value) async {
-                if (value == 'leave') {
-                  _showLeaveLobbyDialog();
-                } else if (value == 'info') {
-                  _showLobbyInfoDialog();
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'info',
-                  child: Row(
-                    children: [
-                      Icon(Icons.info, color: Colors.blue),
-                      SizedBox(width: 8),
-                      Text('Lobby Info'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'leave',
-                  child: Row(
-                    children: [
-                      Icon(Icons.exit_to_app, color: Colors.red),
-                      SizedBox(width: 8),
-                      Text('Leave Lobby'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        body: Column(
-          children: [
-            _buildLobbyInfoSection(),
-            Consumer<ChatProvider>(
-              builder: (context, chatProvider, _) {
-                if (chatProvider.hasActiveTrivia &&
-                    chatProvider.activeTrivia != null) {
-                  return _buildTriviaQuestion(chatProvider.activeTrivia!);
-                } else if (chatProvider.triviaResult != null) {
-                  return _buildTriviaResult(chatProvider.triviaResult!);
-                } else {
-                  return const SizedBox.shrink();
-                }
-              },
-            ),
-            Expanded(
-              child: Consumer<ChatProvider>(
-                builder: (context, chatProvider, _) {
-                  if (_isConnecting) {
-                    return const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 16),
-                          Text('Connecting to lobby...'),
-                        ],
-                      ),
-                    );
-                  }
-
-                  if (chatProvider.messages.isEmpty) {
-                    return const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.chat_bubble_outline,
-                              size: 60, color: Colors.grey),
-                          SizedBox(height: 16),
-                          Text(
-                            'No messages yet. Start the conversation!',
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'Say hi to get the AI bots talking! 🤖',
-                            style: TextStyle(fontSize: 14, color: Colors.grey),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  // Auto-scroll to bottom when new messages arrive
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (_scrollController.hasClients) {
-                      _scrollController.animateTo(
-                        _scrollController.position.maxScrollExtent,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOut,
-                      );
-                    }
-                  });
-
-                  return ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: chatProvider.messages.length,
-                    itemBuilder: (context, index) {
-                      final message = chatProvider.messages[index];
-                      return _buildMessageBubble(message);
-                    },
-                  );
-                },
-              ),
-            ),
-            _buildMessageInput(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLobbyInfoSection() {
-    return Consumer<LobbyProvider>(
-      builder: (context, lobbyProvider, _) {
-        return Column(
-          children: [
-            Container(
-              color: Colors.grey.shade100,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        const Icon(Icons.people, size: 18, color: Colors.blue),
-                        const SizedBox(width: 4),
-                        Text('${lobbyProvider.activeUsers.length} active'),
-                        const SizedBox(width: 16),
-                        const Icon(Icons.smart_toy,
-                            size: 18, color: Colors.deepPurple),
-                        const SizedBox(width: 4),
-                        Text('${lobbyProvider.bots.length} bots'),
-                        if (lobbyProvider.triviaActive) ...[
-                          const SizedBox(width: 16),
-                          const Icon(Icons.quiz,
-                              color: Colors.orange, size: 18),
-                          const SizedBox(width: 4),
-                          const Text('Trivia Active',
-                              style: TextStyle(
-                                  color: Colors.orange,
-                                  fontWeight: FontWeight.bold)),
-                        ],
-                      ],
-                    ),
-                  ),
-                  _buildBotManagementButtons(lobbyProvider),
-                ],
-              ),
-            ),
-            if (lobbyProvider.bots.isNotEmpty)
-              Container(
-                color: Colors.deepPurple.shade50,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: Row(
-                  children: [
-                    const Icon(Icons.smart_toy,
-                        size: 16, color: Colors.deepPurple),
-                    const SizedBox(width: 8),
-                    const Text('Active Bots: ',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    Expanded(
-                      child: Wrap(
-                        spacing: 8,
-                        children: lobbyProvider.bots
-                            .map((bot) => Chip(
-                                  label: Text(bot,
-                                      style: const TextStyle(fontSize: 12)),
-                                  backgroundColor: Colors.deepPurple.shade100,
-                                  deleteIcon: const Icon(Icons.close, size: 16),
-                                  onDeleted: () =>
-                                      _removeBot(bot, lobbyProvider),
-                                ))
-                            .toList(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildBotManagementButtons(LobbyProvider lobbyProvider) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          icon: const Icon(Icons.add_circle, color: Colors.green),
-          tooltip: 'Add AI Bot',
-          onPressed: () => _showAddBotDialog(lobbyProvider),
-        ),
-        if (lobbyProvider.bots.isNotEmpty)
-          IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.blue),
-            tooltip: 'Refresh Lobby Info',
-            onPressed: () => lobbyProvider.fetchLobbyInfo(widget.lobbyId),
-          ),
-      ],
-    );
-  }
-
-  void _showAddBotDialog(LobbyProvider lobbyProvider) async {
-    try {
-      final availableBots = await lobbyProvider.getAvailableBots();
-
-      if (!mounted) return;
-
-      if (availableBots.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No bots available at the moment')),
-        );
-        return;
-      }
-
-      showDialog(
-        context: context,
-        builder: (context) => BotSelectionDialog(
-          availableBots: availableBots,
-          onBotSelected: (botName) => _addBot(botName, lobbyProvider),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading bots: $e')),
-      );
-    }
-  }
-
-  void _addBot(String botName, LobbyProvider lobbyProvider) async {
-    final success = await lobbyProvider.addBot(widget.lobbyId, botName);
-
-    if (!mounted) return;
-
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$botName added to the lobby! 🤖'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to add $botName. Lobby might be full.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  void _removeBot(String botName, LobbyProvider lobbyProvider) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Remove $botName?'),
-        content:
-            Text('Are you sure you want to remove $botName from the lobby?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Remove'),
-          ),
+            );
+            // ignore: unnecessary_to_list_in_spreads
+          }).toList(),
         ],
       ),
-    );
-
-    if (confirmed == true) {
-      final success = await lobbyProvider.removeBot(widget.lobbyId, botName);
-
-      if (!mounted) return;
-
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$botName removed from the lobby'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to remove $botName'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  Widget _buildTriviaQuestion(TriviaQuestion trivia) {
-    int? selectedOption;
-    return Consumer<UserProvider>(
-      builder: (context, userProvider, _) {
-        return Card(
-          color: Colors.orange.shade50,
-          margin: const EdgeInsets.all(12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.quiz, color: Colors.orange, size: 24),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Trivia Time!',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: Colors.orange,
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.orange,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '${trivia.timeLimit}s',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  trivia.question,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 12),
-                ...List.generate(trivia.options.length, (i) {
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: InkWell(
-                      onTap: () async {
-                        selectedOption = i;
-                        await Provider.of<ChatProvider>(context, listen: false)
-                            .submitTriviaAnswer(
-                          widget.lobbyId,
-                          userProvider.currentUser!.userId,
-                          i,
-                        );
-                        setState(() {});
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: selectedOption == i
-                              ? Colors.orange.shade200
-                              : Colors.white,
-                          border: Border.all(
-                            color: selectedOption == i
-                                ? Colors.orange
-                                : Colors.grey.shade300,
-                            width: 2,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: selectedOption == i
-                                    ? Colors.orange
-                                    : Colors.grey.shade300,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '${i + 1}',
-                                  style: TextStyle(
-                                    color: selectedOption == i
-                                        ? Colors.white
-                                        : Colors.black,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                trivia.options[i],
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: selectedOption == i
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ),
-                            if (selectedOption == i)
-                              const Icon(Icons.check, color: Colors.orange),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 8),
-                const Text(
-                  '⏰ Submit your answer before time runs out!',
-                  style: TextStyle(
-                    fontStyle: FontStyle.italic,
-                    color: Colors.orange,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
   Widget _buildTriviaResult(TriviaResult result) {
-    return Card(
-      color: Colors.green.shade50,
-      margin: const EdgeInsets.all(12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.emoji_events, color: Colors.green, size: 24),
-                SizedBox(width: 8),
-                Text(
-                  'Trivia Result',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                    color: Colors.green,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Correct answer: Option ${result.correctAnswer + 1}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 8),
-            if (result.winners.isNotEmpty) ...[
-              const Text(
-                '🏆 Winners:',
-                style:
-                    TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
-              ),
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 8,
-                children: result.winners
-                    .map((winner) => Chip(
-                          label: Text(winner),
-                          backgroundColor: Colors.green.shade100,
-                          avatar: const Icon(Icons.star,
-                              size: 16, color: Colors.green),
-                        ))
-                    .toList(),
-              ),
-            ] else ...[
-              const Text(
-                '😅 No winners this round - better luck next time!',
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppTheme.successColor, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.successColor.withOpacity(0.2),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.emoji_events, color: AppTheme.successColor, size: 24),
+              SizedBox(width: 12),
+              Text(
+                'Trivia Results',
                 style: TextStyle(
-                    color: Colors.orange, fontWeight: FontWeight.w500),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Correct Answer: ${result.correctAnswerText}',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppTheme.successColor,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            result.resultSummary,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppTheme.textSecondaryColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChatSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+      ),
+      child: Column(
+        children: [
+          Expanded(
+            child: Consumer<ChatProvider>(
+              builder: (context, chatProvider, _) {
+                if (chatProvider.messages.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          size: 60,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No messages yet',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Start the conversation!',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (_scrollController.hasClients) {
+                    _scrollController.animateTo(
+                      _scrollController.position.maxScrollExtent,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    );
+                  }
+                });
+
+                return ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: chatProvider.messages.length,
+                  itemBuilder: (context, index) {
+                    final message = chatProvider.messages[index];
+                    return _buildMessageBubble(message);
+                  },
+                );
+              },
+            ),
+          ),
+          _buildTypingIndicator(),
+        ],
       ),
     );
   }
 
   Widget _buildMessageBubble(ChatMessage message) {
-    final isSystem = message.type == 'system';
-    final isBot =
-        message.type == 'bot' || message.username.toLowerCase().contains('bot');
-    final currentUser =
-        Provider.of<UserProvider>(context, listen: false).currentUser;
-    final isCurrentUser = message.username == currentUser?.username;
-
-    if (isSystem) {
-      return Container(
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              message.message,
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontSize: 13,
-                fontStyle: FontStyle.italic,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      );
-    }
+    final isCurrentUser = message.username ==
+        Provider.of<UserProvider>(context, listen: false).currentUsername;
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
+      margin: const EdgeInsets.only(bottom: 12),
       child: Row(
         mainAxisAlignment:
             isCurrentUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isCurrentUser) ...[
             CircleAvatar(
-              radius: 18,
-              backgroundColor: isBot ? Colors.deepPurple : Colors.blue.shade600,
-              child: isBot
-                  ? const Icon(Icons.smart_toy, color: Colors.white, size: 20)
-                  : Text(
-                      message.username[0].toUpperCase(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+              radius: 16,
+              backgroundColor:
+                  message.isBot ? AppTheme.accentColor : AppTheme.primaryColor,
+              child: Text(
+                message.isBot
+                    ? message.avatarEmoji
+                    : message.username[0].toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
           ],
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isBot
-                    ? Colors.deepPurple.shade100
-                    : (isCurrentUser
-                        ? Colors.blue.shade600
-                        : Colors.grey.shade200),
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(20),
-                  topRight: const Radius.circular(20),
-                  bottomLeft: Radius.circular(isCurrentUser ? 20 : 6),
-                  bottomRight: Radius.circular(isCurrentUser ? 6 : 20),
+            child: GestureDetector(
+              onLongPress: () => _showMessageOptions(message),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.75,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 3,
-                    offset: const Offset(0, 1),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: _getMessageColor(message, isCurrentUser),
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(isCurrentUser ? 16 : 4),
+                    bottomRight: Radius.circular(isCurrentUser ? 4 : 16),
                   ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!isCurrentUser)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          message.username,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: isBot
-                                ? Colors.deepPurple
-                                : Colors.grey.shade600,
-                          ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Reply context
+                    if (message.hasReply && message.repliedMessage != null)
+                      _buildReplyContext(message.repliedMessage!),
+
+                    // Sender name (for non-current users)
+                    if (!isCurrentUser)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            Text(
+                              message.displayName,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: message.isBot
+                                    ? AppTheme.accentColor
+                                    : AppTheme.primaryColor,
+                              ),
+                            ),
+                            if (message.isBot) ...[
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.accentColor.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'BOT',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.accentColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                        if (isBot) ...[
-                          const SizedBox(width: 4),
-                          const Icon(
-                            Icons.smart_toy,
-                            size: 12,
-                            color: Colors.deepPurple,
-                          ),
-                        ],
-                      ],
+                      ),
+
+                    // Message content
+                    Text(
+                      message.message,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: isCurrentUser
+                            ? Colors.white
+                            : AppTheme.textPrimaryColor,
+                      ),
                     ),
-                  if (!isCurrentUser) const SizedBox(height: 4),
-                  Text(
-                    message.message,
-                    style: TextStyle(
-                      color: isBot
-                          ? Colors.deepPurple.shade900
-                          : (isCurrentUser ? Colors.white : Colors.black87),
-                      fontSize: 15,
-                      height: 1.3,
+
+                    // Timestamp
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _formatTimestamp(message.timestamp),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isCurrentUser
+                              ? Colors.white.withOpacity(0.7)
+                              : AppTheme.textTertiaryColor,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
           if (isCurrentUser) ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.blue.shade600,
+              radius: 16,
+              backgroundColor: AppTheme.primaryColor,
               child: Text(
                 message.username[0].toUpperCase(),
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 14,
+                  fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -754,6 +615,105 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
+  Widget _buildReplyContext(ChatMessage repliedMessage) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: const Border(
+          left: BorderSide(
+            color: AppTheme.accentColor,
+            width: 3,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Replying to ${repliedMessage.displayName}',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.textSecondaryColor,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            repliedMessage.message,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppTheme.textTertiaryColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Consumer<ChatProvider>(
+      builder: (context, chatProvider, _) {
+        if (!chatProvider.someoneIsTyping) {
+          return const SizedBox.shrink();
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              FadeTransition(
+                opacity: _typingAnimation,
+                child: Text(
+                  '${chatProvider.typingUsers.join(', ')} ${chatProvider.typingUsers.length == 1 ? 'is' : 'are'} typing...',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondaryColor,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 16,
+                height: 8,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: List.generate(3, (index) {
+                    return AnimatedBuilder(
+                      animation: _typingAnimationController,
+                      builder: (context, child) {
+                        final delay = index * 0.2;
+                        final animationValue =
+                            (_typingAnimationController.value - delay)
+                                .clamp(0.0, 1.0);
+                        return Transform.translate(
+                          offset: Offset(0, -4 * animationValue),
+                          child: Container(
+                            width: 3,
+                            height: 3,
+                            decoration: const BoxDecoration(
+                              color: AppTheme.textSecondaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  }),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildMessageInput() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -761,60 +721,450 @@ class _LobbyScreenState extends State<LobbyScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.shade300,
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
             offset: const Offset(0, -2),
-            blurRadius: 6,
           ),
         ],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              decoration: InputDecoration(
-                hintText: 'Type a message...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.grey.shade100,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-              ),
-              maxLines: null,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _sendMessage(),
-            ),
-          ),
-          const SizedBox(width: 12),
+          // Reply banner
           Consumer<ChatProvider>(
             builder: (context, chatProvider, _) {
-              return FloatingActionButton(
-                mini: true,
-                onPressed: chatProvider.isConnected && !_isConnecting
-                    ? _sendMessage
-                    : null,
-                backgroundColor: chatProvider.isConnected && !_isConnecting
-                    ? Colors.blue.shade600
-                    : Colors.grey,
-                child: const Icon(Icons.send, color: Colors.white),
+              if (!chatProvider.isReplying) return const SizedBox.shrink();
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.accentColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppTheme.accentColor.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.reply,
+                      size: 16,
+                      color: AppTheme.accentColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Replying to ${chatProvider.replyingTo!.displayName}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.accentColor,
+                            ),
+                          ),
+                          Text(
+                            chatProvider.replyingTo!.message,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textSecondaryColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () {
+                        Provider.of<ChatProvider>(context, listen: false)
+                            .clearReply();
+                      },
+                      icon: const Icon(Icons.close, size: 16),
+                      color: AppTheme.textSecondaryColor,
+                    ),
+                  ],
+                ),
               );
             },
+          ),
+
+          // Message input
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _messageController,
+                  decoration: InputDecoration(
+                    hintText: 'Type a message...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                  ),
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendMessage(),
+                  onChanged: _onMessageChanged,
+                  maxLines: null,
+                  textCapitalization: TextCapitalization.sentences,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Consumer<ChatProvider>(
+                builder: (context, chatProvider, _) {
+                  return Container(
+                    decoration: const BoxDecoration(
+                      gradient: AppTheme.primaryGradient,
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      onPressed: chatProvider.isConnected ? _sendMessage : null,
+                      icon: const Icon(Icons.send, color: Colors.white),
+                      splashRadius: 24,
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  void _sendMessage() {
+  Widget _buildLobbyDrawer() {
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                gradient: AppTheme.primaryGradient,
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.settings, color: Colors.white, size: 24),
+                  SizedBox(width: 12),
+                  Text(
+                    'Lobby Settings',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Consumer<LobbyProvider>(
+                builder: (context, lobbyProvider, _) {
+                  final lobby = lobbyProvider.currentLobby;
+                  if (lobby == null) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  return ListView(
+                    children: [
+                      _buildLobbyInfoTile(lobby),
+                      const Divider(),
+                      _buildParticipantsList(lobby),
+                      const Divider(),
+                      _buildBotManagement(lobby),
+                      const Divider(),
+                      _buildLobbyActions(),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLobbyInfoTile(lobby) {
+    return ListTile(
+      leading: Icon(
+        lobby.isPrivate ? Icons.lock : Icons.public,
+        color: lobby.isPrivate ? Colors.red : Colors.green,
+      ),
+      title: Text(lobby.name),
+      subtitle: Text('Code: ${lobby.inviteCode}'),
+      trailing: IconButton(
+        icon: const Icon(Icons.copy),
+        onPressed: () {
+          Clipboard.setData(ClipboardData(text: lobby.inviteCode));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invite code copied!')),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildParticipantsList(lobby) {
+    return ExpansionTile(
+      leading: const Icon(Icons.people),
+      title: Text('Participants (${lobby.currentPlayers})'),
+      children: [
+        ...lobby.users
+            .map((user) => ListTile(
+                  leading: CircleAvatar(
+                    radius: 16,
+                    backgroundColor: AppTheme.primaryColor,
+                    child: Text(
+                      user[0].toUpperCase(),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                  title: Text(user),
+                  trailing: lobby.activeUsers.contains(user)
+                      ? Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle,
+                          ),
+                        )
+                      : null,
+                ))
+            .toList(),
+      ],
+    );
+  }
+
+  Widget _buildBotManagement(lobby) {
+    return ExpansionTile(
+      leading: const Icon(Icons.smart_toy),
+      title: Text('AI Bots (${lobby.currentBots}/${lobby.maxBots})'),
+      children: [
+        ...lobby.bots
+            .map((bot) => ListTile(
+                  leading: Text(bot.displayAvatar,
+                      style: const TextStyle(fontSize: 20)),
+                  title: Text(bot.name),
+                  subtitle: Text(bot.description ?? 'AI Assistant'),
+                  trailing: IconButton(
+                    onPressed: () => _removeBot(bot.name),
+                    icon: const Icon(Icons.remove_circle, color: Colors.red),
+                  ),
+                ))
+            .toList(),
+        if (lobby.currentBots < lobby.maxBots)
+          ListTile(
+            leading: const Icon(Icons.add_circle, color: Colors.green),
+            title: const Text('Add Bot'),
+            onTap: _showAddBotDialog,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLobbyActions() {
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.refresh, color: Colors.blue),
+          title: const Text('Refresh'),
+          onTap: _refreshLobby,
+        ),
+        ListTile(
+          leading: const Icon(Icons.exit_to_app, color: Colors.red),
+          title: const Text('Leave Lobby'),
+          onTap: _showLeaveLobbyDialog,
+        ),
+      ],
+    );
+  }
+
+  // Helper methods
+  Color _getMessageColor(ChatMessage message, bool isCurrentUser) {
+    if (isCurrentUser) {
+      return AppTheme.primaryColor;
+    } else if (message.isBot) {
+      return AppTheme.accentColor.withOpacity(0.1);
+    } else if (message.isSystem) {
+      return Colors.grey.shade200;
+    }
+    return Colors.white;
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
+
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inHours < 1) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inDays < 1) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${timestamp.day}/${timestamp.month}';
+    }
+  }
+
+  void _onMessageChanged(String text) {
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+
+    if (text.isEmpty && _isTyping) {
+      _isTyping = false;
+      chatProvider.sendTyping(false);
+      _typingTimer?.cancel();
+    } else if (text.isNotEmpty && !_isTyping) {
+      _isTyping = true;
+      chatProvider.sendTyping(true);
+    }
+
+    // Stop typing after 2 seconds of inactivity
+    _typingTimer?.cancel();
+    _typingTimer = Timer(const Duration(seconds: 2), () {
+      if (_isTyping) {
+        _isTyping = false;
+        chatProvider.sendTyping(false);
+      }
+    });
+  }
+
+  void _sendMessage() async {
     final message = _messageController.text.trim();
-    if (message.isNotEmpty) {
-      _chatProvider.sendMessage(message);
+    if (message.isEmpty) return;
+
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    final success = await chatProvider.sendMessage(message);
+
+    if (success) {
       _messageController.clear();
+      _isTyping = false;
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to send message')),
+        );
+      }
+    }
+  }
+
+  void _submitTriviaAnswer(int answerIndex) async {
+    final chatProvider = Provider.of<ChatProvider>(context, listen: false);
+    final success = await chatProvider.submitTriviaAnswer(answerIndex);
+
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to submit answer')),
+      );
+    }
+  }
+
+  void _showMessageOptions(ChatMessage message) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply),
+              title: const Text('Reply'),
+              onTap: () {
+                Navigator.pop(context);
+                Provider.of<ChatProvider>(context, listen: false)
+                    .setReplyTo(message);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: const Text('Copy'),
+              onTap: () {
+                Navigator.pop(context);
+                Clipboard.setData(ClipboardData(text: message.message));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Message copied!')),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAddBotDialog() {
+    final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add AI Bot'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: lobbyProvider.availableBots.map((bot) {
+            return ListTile(
+              leading: Text(bot.avatar, style: const TextStyle(fontSize: 24)),
+              title: Text(bot.name),
+              subtitle: Text(bot.description),
+              onTap: () async {
+                Navigator.pop(context);
+                _addBot(bot.name);
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  void _addBot(String botName) async {
+    final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
+    final success = await lobbyProvider.addBot(widget.lobbyId, botName);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text(success ? 'Bot added successfully!' : 'Failed to add bot'),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _removeBot(String botName) async {
+    final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
+    final success = await lobbyProvider.removeBot(widget.lobbyId, botName);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              success ? 'Bot removed successfully!' : 'Failed to remove bot'),
+          backgroundColor: success ? Colors.green : Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _refreshLobby() async {
+    final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
+    await lobbyProvider.fetchLobbyInfo(widget.lobbyId);
+
+    if (mounted) {
+      Navigator.pop(context); // Close drawer
     }
   }
 
@@ -830,9 +1180,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Go back to home screen
+              _leaveLobby();
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Leave'),
@@ -842,32 +1192,23 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
-  void _showLobbyInfoDialog() {
+  void _leaveLobby() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
     final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(widget.lobbyName),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Lobby ID: ${widget.lobbyId}'),
-            Text('Active Users: ${lobbyProvider.activeUsers.join(", ")}'),
-            Text('Total Users: ${lobbyProvider.users.join(", ")}'),
-            Text('Active Bots: ${lobbyProvider.bots.join(", ")}'),
-            Text('Messages: ${lobbyProvider.messageCount}'),
-            Text('Trivia Active: ${lobbyProvider.triviaActive ? "Yes" : "No"}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+    final success = await lobbyProvider.leaveLobby(
+      widget.lobbyId,
+      userProvider.currentUserId,
     );
+
+    if (mounted) {
+      if (success) {
+        Navigator.of(context).pop(); // Return to home screen
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to leave lobby')),
+        );
+      }
+    }
   }
 }

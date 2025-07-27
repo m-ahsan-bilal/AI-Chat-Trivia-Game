@@ -53,6 +53,8 @@ class LobbyProvider with ChangeNotifier {
     loadAvailableBots(); // Load available bots
   }
 
+  get apiService => null;
+
   /// Start auto-refresh timer
   void _startAutoRefresh() {
     _refreshTimer?.cancel();

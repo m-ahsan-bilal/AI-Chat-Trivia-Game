@@ -1,4 +1,6 @@
 // lib/core/services/api_service.dart
+// ignore_for_file: constant_identifier_names, provide_deprecation_message
+
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
