@@ -178,11 +178,10 @@ APK works on Android 10+
 ## 🙏 Author
 
 **Muhammad Ahsan**
-Flutter Developer | AI Chat Systems | Trivia Game Prototyper
+Flutter Developer | AI Chat Systems 
 
 ---
 
-**Built with ❤️ with Flutter + FastAPI + Web Sockets + AI** 
 
 
 <p align="center">
