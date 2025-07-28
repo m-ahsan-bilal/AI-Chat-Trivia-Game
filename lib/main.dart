@@ -1,4 +1,5 @@
 // lib/main.dart
+import 'package:ai_chat_trivia/utils/go_router.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -45,20 +46,14 @@ class MyApp extends StatelessWidget {
       ],
       child: Consumer<UserProvider>(
         builder: (context, userProvider, _) {
-          return MaterialApp(
+          return MaterialApp.router(
             title: '🎮 AI Chat Trivia',
             debugShowCheckedModeBanner: false,
-
-            // Theme configuration
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode:
                 userProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-
-            // Home widget
-            home: const AppWrapper(),
-
-            // Global error handling
+            routerConfig: appRouter,
             builder: (context, child) {
               ErrorWidget.builder = (FlutterErrorDetails errorDetails) {
                 return _buildErrorWidget(errorDetails);

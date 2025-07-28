@@ -3,18 +3,24 @@ import 'package:ai_chat_trivia/ui/screens/auth_screen.dart';
 import 'package:ai_chat_trivia/ui/screens/create_lobby_screen.dart';
 import 'package:ai_chat_trivia/ui/screens/home_screen.dart';
 import 'package:ai_chat_trivia/ui/screens/lobby_screen.dart';
+import 'package:ai_chat_trivia/ui/screens/splash_screen.dart';
 import 'package:go_router/go_router.dart';
 
 final GoRouter appRouter = GoRouter(
-  initialLocation: '/',
+  initialLocation: '/app',
   routes: [
     GoRoute(
       path: '/',
-      name: 'appwrappers',
+      name: 'splash screen',
+      builder: (context, state) => const SplashScreen(),
+    ),
+    GoRoute(
+      path: '/app',
+      name: 'app',
       builder: (context, state) => const AppWrapper(),
     ),
     GoRoute(
-      path: '/',
+      path: '/auth',
       name: 'auth',
       builder: (context, state) => const AuthScreen(),
     ),

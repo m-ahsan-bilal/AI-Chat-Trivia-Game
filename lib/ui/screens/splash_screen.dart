@@ -1,7 +1,9 @@
 // lib/ui/screens/splash_screen.dart
+
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -31,83 +33,73 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _setupAnimations() {
-    // Logo animations
     _logoController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
 
-    _logoScale = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _logoController,
-      curve: Curves.elasticOut,
-    ));
+    _logoScale = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _logoController, curve: Curves.elasticOut),
+    );
 
-    _logoRotation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _logoController,
-      curve: Curves.easeInOut,
-    ));
+    _logoRotation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _logoController, curve: Curves.easeInOut),
+    );
 
-    // Text animations
     _textController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
     );
 
-    _textOpacity = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _textController,
-      curve: Curves.easeIn,
-    ));
+    _textOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _textController, curve: Curves.easeIn),
+    );
 
-    _textSlide = Tween<double>(
-      begin: 50.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _textController,
-      curve: Curves.easeOut,
-    ));
+    _textSlide = Tween<double>(begin: 50.0, end: 0.0).animate(
+      CurvedAnimation(parent: _textController, curve: Curves.easeOut),
+    );
 
-    // Background animations
     _backgroundController = AnimationController(
       duration: const Duration(milliseconds: 2000),
       vsync: this,
     );
 
-    _backgroundOpacity = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _backgroundController,
-      curve: Curves.easeInOut,
-    ));
+    _backgroundOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _backgroundController, curve: Curves.easeInOut),
+    );
   }
 
   void _startAnimations() async {
-    // Start background animation immediately
-    _backgroundController.forward();
+    try {
+      await _backgroundController.forward();
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (mounted) await _logoController.forward();
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) await _textController.forward();
 
-    // Start logo animation after a short delay
-    await Future.delayed(const Duration(milliseconds: 300));
-    _logoController.forward();
-
-    // Start text animation after logo
-    await Future.delayed(const Duration(milliseconds: 800));
-    _textController.forward();
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
+        context.go('/app');
+        // Navigator.of(context)
+        //     .pushReplacementNamed('/'); // Replace with your route
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Splash animation error: $e');
+      debugPrint('$stackTrace');
+    }
   }
 
   @override
   void dispose() {
+    if (_logoController.isAnimating) _logoController.stop();
     _logoController.dispose();
+
+    if (_textController.isAnimating) _textController.stop();
     _textController.dispose();
+
+    if (_backgroundController.isAnimating) _backgroundController.stop();
     _backgroundController.dispose();
+
     super.dispose();
   }
 
@@ -129,8 +121,8 @@ class _SplashScreenState extends State<SplashScreen>
                 colors: [
                   AppTheme.primaryColor.withOpacity(_backgroundOpacity.value),
                   AppTheme.secondaryColor.withOpacity(_backgroundOpacity.value),
-                  AppTheme.accentColor
-                      .withOpacity(_backgroundOpacity.value * 0.8),
+                  AppTheme.accentColor.withOpacity(
+                      (_backgroundOpacity.value * 0.8).clamp(0.0, 1.0)),
                 ],
               ),
             ),
@@ -138,11 +130,10 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Animated Logo
                   Transform.scale(
                     scale: _logoScale.value,
                     child: Transform.rotate(
-                      angle: _logoRotation.value * 0.1, // Subtle rotation
+                      angle: _logoRotation.value * 2 * 3.1416, // full spin
                       child: Container(
                         width: 120,
                         height: 120,
@@ -165,10 +156,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 40),
-
-                  // Animated App Name
                   Transform.translate(
                     offset: Offset(0, _textSlide.value),
                     child: Opacity(
@@ -198,10 +186,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 60),
-
-                  // Loading Indicator
                   Opacity(
                     opacity: _textOpacity.value,
                     child: Column(
@@ -228,10 +213,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ],
                     ),
                   ),
-
                   const Spacer(),
-
-                  // Bottom branding
                   Opacity(
                     opacity: _textOpacity.value,
                     child: Padding(
@@ -241,51 +223,9 @@ class _SplashScreenState extends State<SplashScreen>
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.3),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: const Text(
-                                  '🤖 Powered by AI',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
+                              _buildChip('🤖 Powered by AI'),
                               const SizedBox(width: 12),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.3),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: const Text(
-                                  '⚡ Real-time',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
+                              _buildChip('⚡ Real-time'),
                             ],
                           ),
                           const SizedBox(height: 16),
@@ -306,6 +246,28 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildChip(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }

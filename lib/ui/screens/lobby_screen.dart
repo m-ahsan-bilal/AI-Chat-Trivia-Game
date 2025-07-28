@@ -37,11 +37,22 @@ class _LobbyScreenState extends State<LobbyScreen>
   Timer? _typingTimer;
   bool _isTyping = false;
 
+  // Store provider references to avoid context access in dispose
+  ChatProvider? _chatProvider;
+  bool _isDisposed = false;
+
   @override
   void initState() {
     super.initState();
     _setupAnimations();
     _connectToLobby();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Store provider reference safely
+    _chatProvider = Provider.of<ChatProvider>(context, listen: false);
   }
 
   void _setupAnimations() {
@@ -62,6 +73,8 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   void _connectToLobby() async {
+    if (_isDisposed) return;
+
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
 
@@ -74,30 +87,83 @@ class _LobbyScreenState extends State<LobbyScreen>
 
   @override
   void dispose() {
+    _isDisposed = true;
+
+    // Clean up controllers and timers first
     _typingAnimationController.dispose();
     _messageController.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
 
-    // Disconnect from chat
-    Provider.of<ChatProvider>(context, listen: false).disconnect();
+    // Disconnect from chat using stored reference
+    _chatProvider?.disconnect();
+
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          _buildLobbyInfo(),
-          _buildTriviaSection(),
-          Expanded(child: _buildChatSection()),
-          _buildMessageInput(),
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        appBar: _buildAppBar(),
+        body: Column(
+          children: [
+            _buildLobbyInfo(),
+            _buildTriviaSection(),
+            _buildTriviaCounter(),
+            Expanded(child: _buildChatSection()),
+            _buildMessageInput(),
+          ],
+        ),
+        endDrawer: _buildLobbyDrawer(),
+      ),
+    );
+  }
+
+  Future<bool> _onWillPop() async {
+    // Show confirmation dialog with better UX
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.exit_to_app, color: AppTheme.warningColor),
+            SizedBox(width: 12),
+            Text('Leave Lobby?'),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to leave this lobby? You can rejoin using the invite code.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Stay'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.warningColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Leave'),
+          ),
         ],
       ),
-      endDrawer: _buildLobbyDrawer(),
     );
+
+    if (shouldLeave == true) {
+      await _leaveLobby(showDialog: false);
+      return true;
+    }
+    return false;
   }
 
   PreferredSizeWidget _buildAppBar() {
@@ -196,6 +262,41 @@ class _LobbyScreenState extends State<LobbyScreen>
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(
+                            ClipboardData(text: lobby.inviteCode));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check,
+                                    color: Colors.white, size: 16),
+                                SizedBox(width: 8),
+                                Text('Code copied!'),
+                              ],
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            backgroundColor: AppTheme.successColor,
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(
+                          Icons.copy,
+                          size: 16,
+                          color: AppTheme.textSecondaryColor,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -261,6 +362,7 @@ class _LobbyScreenState extends State<LobbyScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header with improved timer
           Row(
             children: [
               const Icon(Icons.quiz, color: Colors.white, size: 24),
@@ -276,35 +378,84 @@ class _LobbyScreenState extends State<LobbyScreen>
               const Spacer(),
               Consumer<ChatProvider>(
                 builder: (context, chatProvider, _) {
+                  final timeRemaining = chatProvider.triviaTimeRemaining;
+                  final isUrgent = timeRemaining <= 10;
+
                   return Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: isUrgent
+                          ? Colors.red.withOpacity(0.8)
+                          : Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(20),
+                      border: isUrgent
+                          ? Border.all(color: Colors.red, width: 2)
+                          : null,
                     ),
-                    child: Text(
-                      '${chatProvider.triviaTimeRemaining}s',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isUrgent)
+                          const Icon(Icons.warning,
+                              color: Colors.white, size: 16),
+                        if (isUrgent) const SizedBox(width: 4),
+                        Text(
+                          '${timeRemaining}s',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: isUrgent ? 16 : 14,
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 },
               ),
             ],
           ),
+
+          // Progress bar
+          const SizedBox(height: 12),
+          Consumer<ChatProvider>(
+            builder: (context, chatProvider, _) {
+              final progress = (30 - chatProvider.triviaTimeRemaining) / 30;
+              return LinearProgressIndicator(
+                value: progress,
+                backgroundColor: Colors.white.withOpacity(0.3),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  chatProvider.triviaTimeRemaining <= 10
+                      ? Colors.red
+                      : Colors.white,
+                ),
+              );
+            },
+          ),
+
           const SizedBox(height: 16),
-          Text(
-            trivia.question,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
+
+          // Question
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              trivia.question,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+              ),
             ),
           ),
+
           const SizedBox(height: 16),
+
+          // Answer options with better selection feedback
           ...trivia.options.asMap().entries.map((entry) {
             final index = entry.key;
             final option = entry.value;
@@ -312,6 +463,8 @@ class _LobbyScreenState extends State<LobbyScreen>
             return Consumer<ChatProvider>(
               builder: (context, chatProvider, _) {
                 final hasAnswered = chatProvider.hasAnsweredTrivia;
+                final selectedAnswer = chatProvider.selectedTriviaAnswer;
+                final isSelected = selectedAnswer == index;
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
@@ -319,23 +472,96 @@ class _LobbyScreenState extends State<LobbyScreen>
                     onPressed:
                         hasAnswered ? null : () => _submitTriviaAnswer(index),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppTheme.secondaryColor,
-                      minimumSize: const Size(double.infinity, 48),
+                      backgroundColor:
+                          isSelected ? AppTheme.successColor : Colors.white,
+                      foregroundColor:
+                          isSelected ? Colors.white : AppTheme.secondaryColor,
+                      minimumSize: const Size(double.infinity, 52),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
+                        side: isSelected
+                            ? const BorderSide(color: Colors.white, width: 2)
+                            : BorderSide.none,
                       ),
+                      elevation: isSelected ? 8 : 2,
                     ),
-                    child: Text(
-                      '${String.fromCharCode(65 + index)}. $option',
-                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.white.withOpacity(0.2)
+                                : AppTheme.secondaryColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Center(
+                            child: Text(
+                              String.fromCharCode(65 + index),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: isSelected
+                                    ? Colors.white
+                                    : AppTheme.secondaryColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            option,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 15,
+                              color: isSelected
+                                  ? Colors.white
+                                  : AppTheme.secondaryColor,
+                            ),
+                          ),
+                        ),
+                        if (isSelected)
+                          const Icon(Icons.check_circle,
+                              color: Colors.white, size: 20),
+                      ],
                     ),
                   ),
                 );
               },
             );
-            // ignore: unnecessary_to_list_in_spreads
-          }).toList(),
+          }),
+
+          // Answer status
+          Consumer<ChatProvider>(
+            builder: (context, chatProvider, _) {
+              if (chatProvider.hasAnsweredTrivia) {
+                return Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.white, size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'Answer submitted! Waiting for results...',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
         ],
       ),
     );
@@ -360,38 +586,250 @@ class _LobbyScreenState extends State<LobbyScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          // Header with celebration
+          Row(
             children: [
-              Icon(Icons.emoji_events, color: AppTheme.successColor, size: 24),
-              SizedBox(width: 12),
-              Text(
-                'Trivia Results',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+              const Icon(Icons.emoji_events,
+                  color: AppTheme.successColor, size: 28),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Trivia Results',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.successColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${result.totalParticipants} played',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.successColor,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
+
           const SizedBox(height: 16),
-          Text(
-            'Correct Answer: ${result.correctAnswerText}',
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppTheme.successColor,
+
+          // Correct answer section
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.successColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.successColor.withOpacity(0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.lightbulb,
+                        color: AppTheme.successColor, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Correct Answer',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.successColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  result.correctAnswerText,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
+
+          const SizedBox(height: 12),
+
+          // Winners section (if any)
+          if (result.winners.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.amber.withOpacity(0.1),
+                    Colors.orange.withOpacity(0.1),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.military_tech,
+                          color: Colors.amber, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        result.winners.length == 1 ? 'Winner!' : 'Winners!',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: result.winners
+                        .map((winner) => Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '🏆 $winner',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.primaryColor,
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            // No winners
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.sentiment_neutral, color: Colors.grey, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'No correct answers this time!',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 12),
+
+          // Summary message
           Text(
             result.resultSummary,
             style: const TextStyle(
               fontSize: 14,
               color: AppTheme.textSecondaryColor,
+              height: 1.3,
+            ),
+          ),
+
+          // Next trivia hint
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.schedule, color: AppTheme.primaryColor, size: 16),
+                SizedBox(width: 8),
+                Text(
+                  'Next trivia will appear after a few more messages!',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.primaryColor,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTriviaCounter() {
+    return Consumer<ChatProvider>(
+      builder: (context, chatProvider, _) {
+        // Only show if no active trivia and enough users
+        if (chatProvider.hasActiveTrivia ||
+            chatProvider.triviaResult != null ||
+            chatProvider.messages.length < 5) {
+          return const SizedBox.shrink();
+        }
+
+        final messageCount =
+            chatProvider.messages.where((m) => m.type == 'user').length;
+        final messagesUntilTrivia = 8 - (messageCount % 8);
+
+        if (messagesUntilTrivia <= 3) {
+          // Show when close
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.accentColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.accentColor.withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.quiz, color: AppTheme.accentColor, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'Trivia coming in $messagesUntilTrivia messages! 🎯',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.accentColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return const SizedBox.shrink();
+      },
     );
   }
 
@@ -437,7 +875,7 @@ class _LobbyScreenState extends State<LobbyScreen>
                 }
 
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (_scrollController.hasClients) {
+                  if (_scrollController.hasClients && !_isDisposed) {
                     _scrollController.animateTo(
                       _scrollController.position.maxScrollExtent,
                       duration: const Duration(milliseconds: 300),
@@ -778,8 +1216,10 @@ class _LobbyScreenState extends State<LobbyScreen>
                     ),
                     IconButton(
                       onPressed: () {
-                        Provider.of<ChatProvider>(context, listen: false)
-                            .clearReply();
+                        if (!_isDisposed) {
+                          Provider.of<ChatProvider>(context, listen: false)
+                              .clearReply();
+                        }
                       },
                       icon: const Icon(Icons.close, size: 16),
                       color: AppTheme.textSecondaryColor,
@@ -905,7 +1345,19 @@ class _LobbyScreenState extends State<LobbyScreen>
         onPressed: () {
           Clipboard.setData(ClipboardData(text: lobby.inviteCode));
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Invite code copied!')),
+            const SnackBar(
+              content: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check, color: Colors.white, size: 16),
+                  SizedBox(width: 8),
+                  Text('Invite code copied!'),
+                ],
+              ),
+              backgroundColor: AppTheme.successColor,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
+            ),
           );
         },
       ),
@@ -1016,6 +1468,8 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   void _onMessageChanged(String text) {
+    if (_isDisposed) return;
+
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
 
     if (text.isEmpty && _isTyping) {
@@ -1030,7 +1484,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     // Stop typing after 2 seconds of inactivity
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 2), () {
-      if (_isTyping) {
+      if (_isTyping && !_isDisposed) {
         _isTyping = false;
         chatProvider.sendTyping(false);
       }
@@ -1038,6 +1492,8 @@ class _LobbyScreenState extends State<LobbyScreen>
   }
 
   void _sendMessage() async {
+    if (_isDisposed) return;
+
     final message = _messageController.text.trim();
     if (message.isEmpty) return;
 
@@ -1048,21 +1504,44 @@ class _LobbyScreenState extends State<LobbyScreen>
       _messageController.clear();
       _isTyping = false;
     } else {
-      if (mounted) {
+      if (mounted && !_isDisposed) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to send message')),
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text('Failed to send message'),
+              ],
+            ),
+            backgroundColor: AppTheme.errorColor,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
   }
 
   void _submitTriviaAnswer(int answerIndex) async {
+    _playTriviaSound('answer');
+    if (_isDisposed) return;
+
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
     final success = await chatProvider.submitTriviaAnswer(answerIndex);
 
-    if (!success && mounted) {
+    if (!success && mounted && !_isDisposed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to submit answer')),
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.error, color: Colors.white, size: 16),
+              SizedBox(width: 8),
+              Text('Failed to submit answer'),
+            ],
+          ),
+          backgroundColor: AppTheme.errorColor,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }
@@ -1078,24 +1557,49 @@ class _LobbyScreenState extends State<LobbyScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
             ListTile(
-              leading: const Icon(Icons.reply),
+              leading: const Icon(Icons.reply, color: AppTheme.accentColor),
               title: const Text('Reply'),
               onTap: () {
                 Navigator.pop(context);
-                Provider.of<ChatProvider>(context, listen: false)
-                    .setReplyTo(message);
+                if (!_isDisposed) {
+                  Provider.of<ChatProvider>(context, listen: false)
+                      .setReplyTo(message);
+                }
               },
             ),
             ListTile(
-              leading: const Icon(Icons.copy),
+              leading: const Icon(Icons.copy, color: AppTheme.primaryColor),
               title: const Text('Copy'),
               onTap: () {
                 Navigator.pop(context);
                 Clipboard.setData(ClipboardData(text: message.message));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Message copied!')),
-                );
+                if (!_isDisposed) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check, color: Colors.white, size: 16),
+                          SizedBox(width: 8),
+                          Text('Message copied!'),
+                        ],
+                      ),
+                      backgroundColor: AppTheme.successColor,
+                      behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
               },
             ),
           ],
@@ -1110,61 +1614,124 @@ class _LobbyScreenState extends State<LobbyScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add AI Bot'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.smart_toy, color: AppTheme.accentColor),
+            SizedBox(width: 12),
+            Text('Add AI Bot'),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: lobbyProvider.availableBots.map((bot) {
-            return ListTile(
-              leading: Text(bot.avatar, style: const TextStyle(fontSize: 24)),
-              title: Text(bot.name),
-              subtitle: Text(bot.description),
-              onTap: () async {
-                Navigator.pop(context);
-                _addBot(bot.name);
-              },
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListTile(
+                leading: Text(bot.avatar, style: const TextStyle(fontSize: 24)),
+                title: Text(bot.name),
+                subtitle: Text(bot.description),
+                onTap: () async {
+                  Navigator.pop(context);
+                  _addBot(bot.name);
+                },
+              ),
             );
           }).toList(),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
       ),
     );
   }
 
   void _addBot(String botName) async {
+    if (_isDisposed) return;
+
     final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
     final success = await lobbyProvider.addBot(widget.lobbyId, botName);
 
-    if (mounted) {
+    if (mounted && !_isDisposed) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content:
+          content: Row(
+            children: [
+              Icon(
+                success ? Icons.check : Icons.error,
+                color: Colors.white,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
               Text(success ? 'Bot added successfully!' : 'Failed to add bot'),
-          backgroundColor: success ? Colors.green : Colors.red,
+            ],
+          ),
+          backgroundColor:
+              success ? AppTheme.successColor : AppTheme.errorColor,
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }
   }
 
   void _removeBot(String botName) async {
+    if (_isDisposed) return;
+
     final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
     final success = await lobbyProvider.removeBot(widget.lobbyId, botName);
 
-    if (mounted) {
+    if (mounted && !_isDisposed) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-              success ? 'Bot removed successfully!' : 'Failed to remove bot'),
-          backgroundColor: success ? Colors.green : Colors.red,
+          content: Row(
+            children: [
+              Icon(
+                success ? Icons.check : Icons.error,
+                color: Colors.white,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(success
+                  ? 'Bot removed successfully!'
+                  : 'Failed to remove bot'),
+            ],
+          ),
+          backgroundColor:
+              success ? AppTheme.successColor : AppTheme.errorColor,
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }
   }
 
   void _refreshLobby() async {
+    if (_isDisposed) return;
+
     final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
     await lobbyProvider.fetchLobbyInfo(widget.lobbyId);
 
-    if (mounted) {
+    if (mounted && !_isDisposed) {
       Navigator.pop(context); // Close drawer
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.refresh, color: Colors.white, size: 16),
+              SizedBox(width: 8),
+              Text('Lobby refreshed'),
+            ],
+          ),
+          backgroundColor: AppTheme.successColor,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -1172,19 +1739,37 @@ class _LobbyScreenState extends State<LobbyScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Leave Lobby'),
-        content: const Text('Are you sure you want to leave this lobby?'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.exit_to_app, color: AppTheme.warningColor),
+            SizedBox(width: 12),
+            Text('Leave Lobby'),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to leave this lobby? You can rejoin using the invite code.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () async {
               Navigator.pop(context); // Close dialog
-              _leaveLobby();
+              Navigator.pop(context); // Close drawer
+              await _leaveLobby();
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.warningColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
             child: const Text('Leave'),
           ),
         ],
@@ -1192,21 +1777,54 @@ class _LobbyScreenState extends State<LobbyScreen>
     );
   }
 
-  void _leaveLobby() async {
+  void _playTriviaSound(String type) {
+    // You can implement sound effects here
+    // For now, just provide haptic feedback
+    if (type == 'start') {
+      HapticFeedback.mediumImpact();
+    } else if (type == 'answer') {
+      HapticFeedback.lightImpact();
+    } else if (type == 'result') {
+      HapticFeedback.heavyImpact();
+    }
+  }
+
+  Future<void> _leaveLobby({bool showDialog = true}) async {
+    if (_isDisposed) return;
+
     final userProvider = Provider.of<UserProvider>(context, listen: false);
     final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
+
+    if (showDialog) {
+      // Show loading dialog
+      showDialog;
+    }
 
     final success = await lobbyProvider.leaveLobby(
       widget.lobbyId,
       userProvider.currentUserId,
     );
 
-    if (mounted) {
+    if (showDialog && mounted && !_isDisposed) {
+      Navigator.pop(context); // Close loading dialog
+    }
+
+    if (mounted && !_isDisposed) {
       if (success) {
         Navigator.of(context).pop(); // Return to home screen
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to leave lobby')),
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.error, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text('Failed to leave lobby'),
+              ],
+            ),
+            backgroundColor: AppTheme.errorColor,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }

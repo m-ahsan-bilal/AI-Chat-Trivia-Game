@@ -70,6 +70,8 @@ class ChatProvider with ChangeNotifier {
     _setupWebSocketListeners();
   }
 
+  get selectedTriviaAnswer => null;
+
   void _setupWebSocketListeners() {
     // Message received
     _wsService.onMessageReceived = (message) {

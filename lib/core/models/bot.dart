@@ -108,15 +108,15 @@ extension BotTypeExtension on BotType {
   String get description {
     switch (this) {
       case BotType.chatbot:
-        return 'Your friendly neighborhood chatbot';
+        return 'friendly neighborhood';
       case BotType.quizmaster:
-        return 'Trivia enthusiast and quiz master';
+        return 'Trivia enthusiast';
       case BotType.cheerleader:
-        return 'Your biggest supporter and motivator';
+        return 'biggest motivator';
       case BotType.philosopher:
-        return 'Deep thinker and philosophical companion';
+        return 'philosophical companion';
       case BotType.comedian:
-        return 'Comedy expert and joke teller';
+        return 'joke teller';
     }
   }
 }
