@@ -591,7 +591,7 @@ class _CreateLobbyScreenState extends State<CreateLobbyScreen>
                 : canSelect
                     ? Colors.grey.shade300
                     : Colors.grey.shade200,
-            width: isSelected ? 2 : 1,
+            width: 1,
           ),
           boxShadow: [
             BoxShadow(
@@ -605,6 +605,7 @@ class _CreateLobbyScreenState extends State<CreateLobbyScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Stack(
+              clipBehavior: Clip.none,
               children: [
                 Text(
                   bot.avatar,
@@ -645,7 +646,7 @@ class _CreateLobbyScreenState extends State<CreateLobbyScreen>
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 4),
+
             Text(
               bot.description,
               style: TextStyle(
@@ -655,28 +656,30 @@ class _CreateLobbyScreenState extends State<CreateLobbyScreen>
                     : Colors.grey.shade400,
               ),
               textAlign: TextAlign.center,
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? AppTheme.primaryColor.withOpacity(0.2)
-                    : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                bot.providerLabel,
-                style: TextStyle(
-                  fontSize: 9,
-                  color:
-                      isSelected ? AppTheme.primaryColor : Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
+            // const SizedBox(height: 4),
+            // if (bot.providerLabel.isNotEmpty)
+            //   Container(
+            //     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            //     decoration: BoxDecoration(
+            //       color: isSelected
+            //           ? AppTheme.primaryColor.withOpacity(0.2)
+            //           : Colors.grey.shade100,
+            //       borderRadius: BorderRadius.circular(8),
+            //     ),
+            //     child: Text(
+            //       bot.providerLabel,
+            //       style: TextStyle(
+            //         fontSize: 9,
+            //         color: isSelected
+            //             ? AppTheme.primaryColor
+            //             : Colors.grey.shade600,
+            //         fontWeight: FontWeight.w500,
+            //       ),
+            //     ),
+            //   ),
           ],
         ),
       ),

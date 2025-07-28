@@ -61,7 +61,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
       lobbyProvider.loadLobbies();
-      lobbyProvider.loadServerStats();
     });
   }
 
@@ -99,10 +98,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Future<void> _refreshData() async {
     final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
-    await Future.wait([
-      lobbyProvider.loadLobbies(),
-      lobbyProvider.loadServerStats(),
-    ]);
+    await lobbyProvider.loadLobbies();
   }
 
   Widget _buildAppBar() {
@@ -195,22 +191,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
                 const PopupMenuDivider(),
                 const PopupMenuItem(
-                  value: 'settings',
+                  value: 'refresh',
                   child: Row(
                     children: [
-                      Icon(Icons.settings, color: AppTheme.secondaryColor),
+                      Icon(Icons.refresh, color: AppTheme.secondaryColor),
                       SizedBox(width: 12),
-                      Text('Settings'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'stats',
-                  child: Row(
-                    children: [
-                      Icon(Icons.analytics, color: AppTheme.accentColor),
-                      SizedBox(width: 12),
-                      Text('Server Stats'),
+                      Text('Refresh Lobbies'),
                     ],
                   ),
                 ),
@@ -997,16 +983,60 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       case 'profile':
         _showUserProfile();
         break;
-      case 'settings':
-        _showSettings();
-        break;
-      case 'stats':
-        _showServerStats();
+      case 'refresh':
+        _refreshData();
+        _showSnackBar('Refreshing lobbies...', AppTheme.infoColor);
         break;
       case 'logout':
         _showLogoutConfirmation();
         break;
     }
+  }
+
+  // Safe SnackBar method that handles overflow
+  void _showSnackBar(String message, Color backgroundColor,
+      {String? actionLabel, VoidCallback? onAction}) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+                backgroundColor == AppTheme.errorColor
+                    ? Icons.error
+                    : backgroundColor == AppTheme.successColor
+                        ? Icons.check_circle
+                        : backgroundColor == AppTheme.warningColor
+                            ? Icons.warning
+                            : Icons.info,
+                color: Colors.white,
+                size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(fontSize: 14),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: backgroundColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+        action: actionLabel != null && onAction != null
+            ? SnackBarAction(
+                label: actionLabel,
+                textColor: Colors.white,
+                onPressed: onAction,
+              )
+            : null,
+      ),
+    );
   }
 
   void _showJoinByCodeDialog() {
@@ -1026,7 +1056,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   color: AppTheme.accentColor, size: 20),
             ),
             const SizedBox(width: 12),
-            const Text('Join with Invite Code'),
+            const Text('Join with Code'),
           ],
         ),
         content: Column(
@@ -1036,12 +1066,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               controller: _inviteCodeController,
               decoration: const InputDecoration(
                 labelText: 'Invite Code',
-                hintText: 'Enter 6-character code',
+                hintText: 'Enter the code',
                 prefixIcon: Icon(Icons.password),
                 border: OutlineInputBorder(),
               ),
               textCapitalization: TextCapitalization.characters,
-              maxLength: 6,
+              maxLength: 8,
               onSubmitted: (_) => _joinLobbyWithCode(fromDialog: true),
             ),
             const SizedBox(height: 12),
@@ -1102,25 +1132,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         .toList();
 
     if (availableLobbies.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.info, color: Colors.white, size: 16),
-              SizedBox(width: 8),
-              Text('No available lobbies for quick match'),
-            ],
-          ),
-          backgroundColor: AppTheme.warningColor,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          action: SnackBarAction(
-            label: 'Create One',
-            textColor: Colors.white,
-            onPressed: _navigateToCreateLobby,
-          ),
-        ),
+      _showSnackBar(
+        'No available lobbies found',
+        AppTheme.warningColor,
+        actionLabel: 'Create One',
+        onAction: _navigateToCreateLobby,
       );
       return;
     }
@@ -1139,19 +1155,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _joinLobbyWithCode({bool fromDialog = false}) async {
     final inviteCode = _inviteCodeController.text.trim().toUpperCase();
     if (inviteCode.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.error, color: Colors.white, size: 16),
-              SizedBox(width: 8),
-              Text('Please enter an invite code'),
-            ],
-          ),
-          backgroundColor: AppTheme.errorColor,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showSnackBar('Please enter an invite code', AppTheme.errorColor);
       return;
     }
 
@@ -1172,7 +1176,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       userProvider.currentUserId,
     );
 
-    Navigator.pop(context); // Close loading dialog
+    Navigator.pop(context);
 
     if (success) {
       await lobbyProvider.loadLobbies();
@@ -1184,20 +1188,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       if (lobby != null) {
         _navigateToLobby(lobby.lobbyId, lobby.name);
         _inviteCodeController.clear();
+        _showSnackBar('Successfully joined lobby!', AppTheme.successColor);
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error, color: Colors.white, size: 16),
-              const SizedBox(width: 8),
-              Text(lobbyProvider.lastError ?? 'Failed to join lobby'),
-            ],
-          ),
-          backgroundColor: AppTheme.errorColor,
-          behavior: SnackBarBehavior.floating,
-        ),
+      _showSnackBar(
+        lobbyProvider.lastError ?? 'Failed to join lobby',
+        AppTheme.errorColor,
       );
     }
   }
@@ -1230,23 +1226,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     if (success) {
       _navigateToLobby(lobby.lobbyId, lobby.name);
+      _showSnackBar(
+          'Successfully joined ${lobby.name}!', AppTheme.successColor);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error, color: Colors.white, size: 16),
-              const SizedBox(width: 8),
-              Text(
-                lobby.isFull
-                    ? 'Lobby is full'
-                    : lobbyProvider.lastError ?? 'Failed to join lobby',
-              ),
-            ],
-          ),
-          backgroundColor: AppTheme.errorColor,
-          behavior: SnackBarBehavior.floating,
-        ),
+      _showSnackBar(
+        lobby.isFull
+            ? 'Lobby is full'
+            : lobbyProvider.lastError ?? 'Failed to join lobby',
+        AppTheme.errorColor,
       );
     }
   }
@@ -1333,214 +1320,54 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('Close'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSettings() {
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
             Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const Text(
-              'Settings',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 24),
-            SwitchListTile(
-              title: const Text('Dark Mode'),
-              subtitle: const Text('Switch between light and dark themes'),
-              value: userProvider.isDarkMode,
-              onChanged: (value) => userProvider.setDarkMode(value),
-              secondary: Icon(
-                userProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
-                color: AppTheme.primaryColor,
-              ),
-            ),
-            SwitchListTile(
-              title: const Text('Notifications'),
-              subtitle: const Text('Receive push notifications'),
-              value: userProvider.notificationsEnabled,
-              onChanged: (value) => userProvider.setNotificationsEnabled(value),
-              secondary: const Icon(Icons.notifications,
-                  color: AppTheme.secondaryColor),
-            ),
-            SwitchListTile(
-              title: const Text('Sound Effects'),
-              subtitle: const Text('Play sounds for messages and events'),
-              value: userProvider.soundEnabled,
-              onChanged: (value) => userProvider.setSoundEnabled(value),
-              secondary:
-                  const Icon(Icons.volume_up, color: AppTheme.accentColor),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text('Close'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showServerStats() async {
-    final lobbyProvider = Provider.of<LobbyProvider>(context, listen: false);
-
-    // Show loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
-
-    await lobbyProvider.loadServerStats();
-    final stats = lobbyProvider.serverStats;
-
-    Navigator.pop(context); // Close loading dialog
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppTheme.accentColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
+                color: AppTheme.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border:
+                    Border.all(color: AppTheme.primaryColor.withOpacity(0.2)),
               ),
-              child: const Icon(Icons.analytics,
-                  color: AppTheme.accentColor, size: 20),
-            ),
-            const SizedBox(width: 12),
-            const Text('Server Statistics'),
-          ],
-        ),
-        content: stats != null
-            ? SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildStatRow(
-                        'Total Users', '${stats['total_users'] ?? 0}'),
-                    _buildStatRow(
-                        'Total Lobbies', '${stats['total_lobbies'] ?? 0}'),
-                    _buildStatRow(
-                        'Active Lobbies', '${stats['active_lobbies'] ?? 0}'),
-                    _buildStatRow(
-                        'Total Messages', '${stats['total_messages'] ?? 0}'),
-                    _buildStatRow('Total Bots', '${stats['total_bots'] ?? 0}'),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'AI Providers:',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              child: const Column(
+                children: [
+                  Icon(Icons.person, color: AppTheme.primaryColor, size: 32),
+                  SizedBox(height: 8),
+                  Text(
+                    'Profile features coming soon!',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.primaryColor,
                     ),
-                    const SizedBox(height: 8),
-                    if (stats['ai_providers'] != null) ...[
-                      _buildProviderStatus('HuggingFace',
-                          stats['ai_providers']['huggingface'] ?? false),
-                      _buildProviderStatus(
-                          'Ollama', stats['ai_providers']['ollama'] ?? false),
-                      _buildProviderStatus('Enhanced Rules',
-                          stats['ai_providers']['enhanced_rules'] ?? false),
-                    ],
-                  ],
-                ),
-              )
-            : const Text('Failed to load server statistics'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppTheme.primaryColor,
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Track your stats and achievements',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondaryColor,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProviderStatus(String name, bool isOnline) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Icon(
-            isOnline ? Icons.check_circle : Icons.error,
-            size: 16,
-            color: isOnline ? AppTheme.successColor : AppTheme.errorColor,
-          ),
-          const SizedBox(width: 8),
-          Text(name),
-        ],
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Close'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1575,6 +1402,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             onPressed: () {
               Navigator.pop(context);
               Provider.of<UserProvider>(context, listen: false).logout();
+              _showSnackBar('Logged out successfully', AppTheme.infoColor);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.errorColor,

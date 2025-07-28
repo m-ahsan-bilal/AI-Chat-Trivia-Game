@@ -7,7 +7,7 @@ import 'package:ai_chat_trivia/ui/screens/splash_screen.dart';
 import 'package:go_router/go_router.dart';
 
 final GoRouter appRouter = GoRouter(
-  initialLocation: '/app',
+  initialLocation: '/',
   routes: [
     GoRoute(
       path: '/',

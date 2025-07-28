@@ -229,6 +229,8 @@ class _SplashScreenState extends State<SplashScreen>
                             ],
                           ),
                           const SizedBox(height: 16),
+                          _buildChip("Developer: Ahsan"),
+                          const SizedBox(height: 16),
                           Text(
                             'Version 2.0.0',
                             style: TextStyle(

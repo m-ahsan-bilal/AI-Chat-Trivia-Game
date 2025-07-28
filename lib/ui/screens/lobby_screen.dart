@@ -51,7 +51,7 @@ class _LobbyScreenState extends State<LobbyScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Store provider reference safely
+    // Storing provider reference safely
     _chatProvider = Provider.of<ChatProvider>(context, listen: false);
   }
 
@@ -109,9 +109,9 @@ class _LobbyScreenState extends State<LobbyScreen>
         appBar: _buildAppBar(),
         body: Column(
           children: [
-            _buildLobbyInfo(),
+            //   _buildLobbyInfo(),
             _buildTriviaSection(),
-            _buildTriviaCounter(),
+            // _buildTriviaCounter(),
             Expanded(child: _buildChatSection()),
             _buildMessageInput(),
           ],
@@ -223,111 +223,6 @@ class _LobbyScreenState extends State<LobbyScreen>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildLobbyInfo() {
-    return Consumer<LobbyProvider>(
-      builder: (context, lobbyProvider, _) {
-        final lobby = lobbyProvider.currentLobby;
-        if (lobby == null) return const SizedBox.shrink();
-
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppTheme.primaryColor.withOpacity(0.05),
-            border: Border(
-              bottom: BorderSide(
-                color: Colors.grey.shade200,
-                width: 1,
-              ),
-            ),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Icon(
-                      lobby.isPrivate ? Icons.lock : Icons.public,
-                      size: 16,
-                      color: lobby.isPrivate ? Colors.red : Colors.green,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Code: ${lobby.inviteCode}',
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () {
-                        Clipboard.setData(
-                            ClipboardData(text: lobby.inviteCode));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.check,
-                                    color: Colors.white, size: 16),
-                                SizedBox(width: 8),
-                                Text('Code copied!'),
-                              ],
-                            ),
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            backgroundColor: AppTheme.successColor,
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        child: const Icon(
-                          Icons.copy,
-                          size: 16,
-                          color: AppTheme.textSecondaryColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (lobby.hasActiveBots) ...[
-                Row(
-                  children: lobby.bots.take(3).map((bot) {
-                    return Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: Tooltip(
-                        message: bot.name,
-                        child: Text(
-                          bot.displayAvatar,
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                if (lobby.bots.length > 3)
-                  Text(
-                    ' +${lobby.bots.length - 3}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppTheme.textSecondaryColor,
-                    ),
-                  ),
-              ],
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -771,12 +666,13 @@ class _LobbyScreenState extends State<LobbyScreen>
                 Icon(Icons.schedule, color: AppTheme.primaryColor, size: 16),
                 SizedBox(width: 8),
                 Text(
-                  'Next trivia will appear after a few more messages!',
+                  'Next trivia will start in some time',
                   style: TextStyle(
                     fontSize: 12,
                     color: AppTheme.primaryColor,
                     fontWeight: FontWeight.w500,
                   ),
+                  maxLines: 2,
                 ),
               ],
             ),
@@ -786,6 +682,7 @@ class _LobbyScreenState extends State<LobbyScreen>
     );
   }
 
+  // ignore: unused_element
   Widget _buildTriviaCounter() {
     return Consumer<ChatProvider>(
       builder: (context, chatProvider, _) {
