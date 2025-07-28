@@ -1,233 +1,172 @@
-# AI Chat Trivia - Flutter MVP Architecture
+# AI Chat Trivia – Real-Time Multiplayer Chat Game with AI
 
-An AI-powered multiplayer chat trivia game built with Flutter using the **MVP (Model-View-Presenter)** architectural pattern.
+> A beautiful, animated Flutter app demonstrating **real-time human-AI chat**, **custom trivia gameplay**, and **scalable lobby systems** using WebSockets and open-source LLMs.
 
-## 🏗️ Architecture Overview
+---
 
-This project follows the **MVP (Model-View-Presenter)** pattern, which provides a clean separation of concerns and makes the codebase scalable and maintainable.
+## 📚 Project Summary
 
-### MVP Pattern Implementation
+**AI Chat Trivia** is a real-time mobile chat game built in Flutter. Players can join lobbies with other users and AI bots, exchange messages, and participate in periodic trivia rounds. The app features:
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│      View       │    │   Presenter     │    │     Model       │
-│                 │    │                 │    │                 │
-│ • UI Components │◄──►│ • Business Logic│◄──►│ • Data Models   │
-│ • User Input    │    │ • State Mgmt    │    │ • API Services  │
-│ • Display Data  │    │ • Event Handling│    │ • WebSocket     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+* Real-time chat using WebSockets
+* AI-driven responses powered by **Hugging Face** open-source models
+* Dynamic trivia mini-games triggered after every 8 messages
+* Beautiful UI/UX with full custom animations and themes
 
-#### **Model Layer**
-- **Data Models**: `User`, `Lobby`, `Message` classes with JSON serialization
-- **Services**: `ApiService` for REST API calls, `WebSocketService` for real-time communication
-- **Responsibility**: Data management, API communication, business entities
 
-#### **View Layer**
-- **Screens**: UI components that display data and handle user interactions
-- **Widgets**: Reusable UI components in the `shared` folder
-- **Responsibility**: User interface, user input handling, data display
+---
 
-#### **Presenter Layer**
-- **Presenters**: `HomePresenter`, `LobbyPresenter` that manage business logic
-- **Responsibility**: Business logic, state management, coordination between Model and View
+## 📊 Architecture Overview
 
-## 📁 Project Structure
+### Flutter Frontend
 
 ```
 lib/
-├── models/                 # Data models
-│   ├── user.dart          # User model with JSON serialization
-│   ├── lobby.dart         # Lobby model for game rooms
-│   └── message.dart       # Message model for chat
+├── core/
+│   ├── models/         # User, Lobby, Message, Trivia
+│   ├── providers/      # ChatProvider for socket/event state
+│   ├── services/       # WebSocket + AI interaction
+│   └── theme/          # App themes & styling
 │
-├── views/                  # UI Layer (View)
-│   ├── home/              # Home screen (lobby list)
-│   │   └── home_screen.dart
-│   ├── lobby/             # Lobby screen (chat & game)
-│   │   └── lobby_screen.dart
-│   ├── create_lobby/      # Create lobby screen
-│   │   └── create_lobby_screen.dart
-│   └── shared/            # Reusable widgets
-│       └── loading_widget.dart
+├── ui/
+│   ├── screens/        # Home, Lobby, CreateLobby
+│   └── widgets/        # Custom animated UI components
 │
-├── presenters/            # Business Logic Layer (Presenter)
-│   ├── home_presenter.dart    # Home screen logic
-│   └── lobby_presenter.dart   # Lobby screen logic
-│
-├── services/              # Data Layer (Model)
-│   ├── api_service.dart       # REST API client
-│   └── websocket_service.dart # WebSocket client
-│
-├── utils/                 # Utilities and helpers
-│   ├── constants.dart         # App constants
-│   └── app_theme.dart         # Theme configuration
-│
-└── main.dart              # App entry point
+├── utils/              # Constants, helper functions
+└── main.dart           # App entry point
 ```
 
-## 🚀 Key Features
+### Client <--> Server <--> AI
 
-### **Real-time Communication**
-- WebSocket integration for live chat and game events
-- Automatic reconnection handling
-- Ping/pong mechanism for connection health
-
-### **REST API Integration**
-- HTTP client for lobby management
-- Authentication handling
-- Error handling and retry logic
-
-### **State Management**
-- Stream-based reactive programming
-- Presenter pattern for business logic
-- Clean separation of concerns
-
-### **Navigation**
-- GoRouter for declarative routing
-- Deep linking support
-- Error handling for invalid routes
-
-## 🛠️ Dependencies
-
-```yaml
-dependencies:
-  flutter:
-    sdk: flutter
-  http: ^1.1.0                    # REST API calls
-  web_socket_channel: ^2.4.0      # WebSocket communication
-  go_router: ^12.1.3              # Navigation and routing
-  provider: ^6.1.1                # State management
-  json_annotation: ^4.8.1         # JSON serialization
-
-dev_dependencies:
-  json_serializable: ^6.7.1       # JSON code generation
-  build_runner: ^2.4.7            # Code generation
+```mermaid
+graph LR
+A[Flutter App] -- WebSocket --> B[FastAPI WebSocket Server]
+B -- Event/Trivia/Game Msgs --> A
+B -- REST or Async Call --> C[HuggingFace API (LLM)]
+C -- AI Response --> B --> A
 ```
 
-## 🔧 Setup Instructions
+---
 
-### 1. Install Dependencies
+## 🔍 Features
+
+### 🚀 Real-Time Chat
+
+* Scalable lobby system via WebSockets
+* Unlimited rooms/participants
+* Auto-bot replies within 2 seconds
+* Chat animations + stream typing simulation
+
+### 🎮 Trivia Gameplay
+
+* Trivia question triggered after every 8 messages
+* Timer-based question + bot determines winner
+* Trivia logic handled server-side and broadcasted
+
+### 🔖 Lobby System
+
+* Create/join public or private lobbies
+* Max human/AI seat settings
+* See live participant counts on lobby ssettings
+
+### 🎨 Beautiful UI/UX
+
+* Custom animated widgets
+* Fully responsive and adaptive
+* Smooth transitions and rich theming
+
+### 🤖 AI Integration
+
+* Open-source Hugging Face models (e.g., `facebook/blenderbot-400M-distill`, `microsoft/DialoGPT-medium`)
+* Rate-limited token usage
+* Prompt strategy:
+
+  * Concise bot instructions
+  * Maintain personality per lobby
+  * Trivia logic separated from chat
+
+---
+
+## 🔧 Tech Stack
+
+| Layer     | Technology                     |
+| --------- | ------------------------------ |
+| Frontend  | Flutter 3.32.2                  |
+| State     | Provider                       |
+| Routing   | GoRouter                       |
+| Real-time | WebSocketChannel + FastAPI     |
+| Backend   | Python FastAPI (WebSocket)     |
+| AI Model  | Hugging Face Inference API     |
+| Storage   | SharedPreferences (local only) |
+
+---
+
+## 🔄 Build & Run Instructions
+
+### ⚡ Flutter Setup After Clone
+
 ```bash
 flutter pub get
+flutter run
 ```
 
-### 2. Generate JSON Code
+### ⚖️ JSON Generation
+
 ```bash
 flutter packages pub run build_runner build
 ```
 
-### 3. Run the App
+### 📄 APK Build
+
 ```bash
-flutter run
+flutter build apk --release
 ```
 
-## 📱 Screens
+APK works on Android 10+
 
-### **Home Screen**
-- Displays list of available lobbies
-- Pull-to-refresh functionality
-- Search and filter capabilities
-- Create new lobby button
+### 📎 Adding Demo Video and APK
 
-### **Lobby Screen**
-- Real-time chat interface
-- Player list and status
-- Game state management
-- Message history
 
-### **Create Lobby Screen**
-- Form for lobby creation
-- Customizable settings
-- Validation and error handling
-
-## 🔄 Data Flow
-
-### **Home Screen Flow**
-1. **View** → `HomeScreen` displays UI
-2. **Presenter** → `HomePresenter` manages state and API calls
-3. **Model** → `ApiService` fetches lobby data
-4. **Presenter** → Processes data and updates streams
-5. **View** → Listens to streams and updates UI
-
-### **Lobby Screen Flow**
-1. **View** → `LobbyScreen` displays chat interface
-2. **Presenter** → `LobbyPresenter` manages WebSocket connection
-3. **Model** → `WebSocketService` handles real-time communication
-4. **Presenter** → Processes incoming messages and events
-5. **View** → Updates chat and game state
-
-## 🎨 Theming
-
-The app uses a comprehensive theme system with:
-- Light and dark theme support
-- Consistent color palette
-- Custom text styles
-- Reusable component themes
-
-## 🔒 Security
-
-- JWT token-based authentication
-- Secure WebSocket connections
-- Input validation and sanitization
-- Error handling without exposing sensitive data
-
-## 🧪 Testing Strategy
-
-### **Unit Tests**
-- Presenter logic testing
-- Service method testing
-- Model validation testing
-
-### **Widget Tests**
-- UI component testing
-- User interaction testing
-- Navigation testing
-
-### **Integration Tests**
-- End-to-end workflow testing
-- API integration testing
-- WebSocket communication testing
-
-## 📈 Scalability Features
-
-### **Code Organization**
-- Clear separation of concerns
-- Reusable components
-- Consistent naming conventions
-- Comprehensive documentation
-
-### **Performance**
-- Efficient state management
-- Optimized UI rendering
-- Background data fetching
-- Memory leak prevention
-
-### **Maintainability**
-- Modular architecture
-- Dependency injection
-- Error handling patterns
-- Logging and debugging support
-
-## 🤝 Contributing
-
-1. Follow the MVP pattern structure
-2. Add comprehensive comments
-3. Write unit tests for new features
-4. Update documentation
-5. Follow Flutter best practices
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For questions or issues:
-1. Check the documentation
-2. Review existing issues
-3. Create a new issue with detailed information
+```markdown
+🔗 [Click here to download the latest APK](./ai_chat_game.apk)
+🔗 [Click here if above is not working](https://drive.google.com/file/d/1iFilwjoqCSxOWQfA46M4jKCBTAZn33jP/view?usp=drive_link)
+🎥 [Watch Demo Video][([https://youtu.be/your-demo-video](https://drive.google.com/file/d/1Vm1u51dXvkR-Zrqbv-osoIhOXxpGd94E/view?usp=sharing))](https://drive.google.com/file/d/1iFilwjoqCSxOWQfA46M4jKCBTAZn33jP/view?usp=sharing)
+```
 
 ---
 
-**Built with ❤️ using Flutter and MVP Architecture**
+## 🛡️ Security
+
+* AI API token stored securely in backend
+* WebSocket auth included (JWT ready)
+* Input sanitization for chat messages
+
+---
+
+## ⚡ Known Limitations
+
+* No offline mode
+* AI context resets between lobbies
+* Trivia question pool is static (for now)
+
+---
+
+## 📊 Future Enhancements
+
+* AI memory per user/lobby
+* Leaderboards and scoring
+* Avatar customization and reactions
+* Group trivia games with real scores
+* Audio responses (TTS) for accessibility
+
+
+---
+
+## 🙏 Author
+
+**Muhammad Ahsan**
+Flutter Developer | AI Chat Systems | Trivia Game Prototyper
+
+---
+
+**Built with ❤️ with Flutter + FastAPI + Web Sockets + AI** 
