@@ -127,11 +127,30 @@ APK works on Android 10+
 ### 📎 Adding Demo Video and APK
 
 
-```markdown
+
+<p align="center">
+  <a href="./ai_chat_game.apk">
+    <img src="https://img.shields.io/badge/Download-APK-blue?style=for-the-badge" alt="Download APK"/>
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://drive.google.com/file/d/1iFilwjoqCSxOWQfA46M4jKCBTAZn33jP/view?usp=drive_link">
+    <img src="https://img.shields.io/badge/Alternate%20Download-Google%20Drive-brightgreen?style=for-the-badge" alt="Drive Link"/>
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://drive.google.com/file/d/1Vm1u51dXvkR-Zrqbv-osoIhOXxpGd94E/view?usp=sharing">
+    <img src="https://img.shields.io/badge/Watch-Demo%20Video-red?style=for-the-badge&logo=youtube" alt="Demo Video"/>
+  </a>
+</p>
+
+<!-- ```markdown
 🔗 [Click here to download the latest APK](./ai_chat_game.apk)
 🔗 [Click here if above is not working](https://drive.google.com/file/d/1iFilwjoqCSxOWQfA46M4jKCBTAZn33jP/view?usp=drive_link)
 🎥 [Watch Demo Video][([https://youtu.be/your-demo-video](https://drive.google.com/file/d/1Vm1u51dXvkR-Zrqbv-osoIhOXxpGd94E/view?usp=sharing))](https://drive.google.com/file/d/1iFilwjoqCSxOWQfA46M4jKCBTAZn33jP/view?usp=sharing)
-```
+``` -->
 
 ---
 
