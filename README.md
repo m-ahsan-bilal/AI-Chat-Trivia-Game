@@ -185,8 +185,6 @@ Flutter Developer | AI Chat Systems | Trivia Game Prototyper
 **Built with ❤️ with Flutter + FastAPI + Web Sockets + AI** 
 
 
-## 🛠️ Tech Stack
-
 <p align="center">
   <a href="https://flutter.dev" target="_blank"><img src="https://img.shields.io/badge/Flutter-3.32.2-blue?style=for-the-badge&logo=flutter&logoColor=white"/></a>
   <a href="https://fastapi.tiangolo.com/" target="_blank"><img src="https://img.shields.io/badge/FastAPI-Python-009688?style=for-the-badge&logo=fastapi&logoColor=white"/></a>
@@ -195,4 +193,8 @@ Flutter Developer | AI Chat Systems | Trivia Game Prototyper
   <a href="https://pub.dev/packages/provider" target="_blank"><img src="https://img.shields.io/badge/Provider-StateManagement-purple?style=for-the-badge&logo=provider&logoColor=white"/></a>
   <a href="https://pub.dev/packages/go_router" target="_blank"><img src="https://img.shields.io/badge/GoRouter-Routing-ff6f00?style=for-the-badge&logo=flutter&logoColor=white"/></a>
   <a href="https://pub.dev/packages/shared_preferences" target="_blank"><img src="https://img.shields.io/badge/SharedPrefs-Storage-4caf50?style=for-the-badge&logo=google&logoColor=white"/></a>
+</p>
+    
+    
+<p align="center">**Built with ❤️ with Flutter + AI** 
 </p>
