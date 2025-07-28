@@ -195,5 +195,5 @@ Flutter Developer | AI Chat Systems
 </p>
     
     
-<p align="center">**Built with ❤️ with Flutter + AI** 
+<p align="center">Built with ❤️ with Flutter + AI 
 </p>
