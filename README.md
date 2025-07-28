@@ -38,7 +38,7 @@ lib/
 
 ### Client <--> Server <--> AI
 
-```mermaid
+```
 graph LR
 A[Flutter App] -- WebSocket --> B[FastAPI WebSocket Server]
 B -- Event/Trivia/Game Msgs --> A
